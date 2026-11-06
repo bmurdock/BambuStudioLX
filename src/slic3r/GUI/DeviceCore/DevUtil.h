@@ -13,10 +13,11 @@
 #include <sstream>
 #include <stdexcept>
 
-#include <boost/log/trivial.hpp>
+#include <boost/format.hpp>
 #include <boost/lexical_cast.hpp>
 
 #include "nlohmann/json.hpp"
+#include "libslic3r/Log.hpp"
 
  /* Sequence Id*/
 #define STUDIO_START_SEQ_ID    20000
@@ -35,7 +36,7 @@ public:
 
 public:
     static int get_flag_bits(std::string str, int start, int count = 1);
-    static int get_flag_bits(int num, int start, int count = 1, int base = 10);
+    static int get_flag_bits(long long num, int start, int count = 1, int base = 10);
     static uint32_t get_flag_bits_no_border(std::string str, int start_idx, int count = 1);
 
     // eg. get_hex_bits(16, 1, 10) = 1
@@ -64,7 +65,7 @@ public:
         catch (const nlohmann::json::exception& e)
         {
             assert(0 && __FUNCTION__);
-            BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": " << e.what();
+            BOOST_LOG_TRIVIAL(error) << e.what();
         }
 
         return default_val;
@@ -80,9 +81,11 @@ public:
         catch (const nlohmann::json::exception& e)
         {
             assert(0 && __FUNCTION__);
-            BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": " << e.what();
+            BOOST_LOG_TRIVIAL(error) << e.what();
         }
     }
+
+    static void ParseLongLongVal(const nlohmann::json& j, long long& val, int base);
 
     template<typename T>
     static void ParseVal(const nlohmann::json& j, const std::string& key, T& val, T default_val)
@@ -94,7 +97,7 @@ public:
         catch (const nlohmann::json::exception& e)
         {
             assert(0 && __FUNCTION__);
-            BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": " << e.what();
+            BOOST_LOG_TRIVIAL(error) << e.what();
         }
     }
 
@@ -110,12 +113,16 @@ struct NumericStrCompare
         int ai = -1;
         try {
             ai = std::stoi(a);
-        } catch (...) { };
+        } catch (...) {
+            BOOST_LOG_TRIVIAL(warning) << current_exception_message();
+        };
 
         int bi = -1;
         try {
             bi = std::stoi(b);
-        } catch (...) { };
+        } catch (...) {
+            BOOST_LOG_TRIVIAL(warning) << current_exception_message();
+        };
 
         return ai < bi;
     }
@@ -181,7 +188,7 @@ static std::string s_get_diameter_str(const std::string& diameter)
         float dia = boost::lexical_cast<float>(diameter);
         return s_get_diameter_str(dia);
     } catch (...) {
-        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to boost::lexical_cast: " << diameter;
+        BOOST_LOG_TRIVIAL(error) << "failed to boost::lexical_cast: " << diameter;
         return diameter;
     }
 
@@ -189,7 +196,7 @@ static std::string s_get_diameter_str(const std::string& diameter)
         float dia = std::stof(diameter);
         return s_get_diameter_str(dia);
     } catch (...) {
-        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " std::stof: " << diameter;
+        BOOST_LOG_TRIVIAL(error) << "std::stof: " << diameter;
         return diameter;
     }
 }
@@ -199,13 +206,13 @@ static float s_get_diameter(const std::string& diameter)
     try {
         return boost::lexical_cast<float>(diameter);
     } catch (...) {
-        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " failed to boost::lexical_cast: " << diameter;
+        BOOST_LOG_TRIVIAL(error) << "failed to boost::lexical_cast: " << diameter;
     }
 
     try {
         return std::stof(diameter);
     } catch (...) {
-        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " std::stof: " << diameter;
+        BOOST_LOG_TRIVIAL(error) << "std::stof: " << diameter;
     }
 
     return 0.0;

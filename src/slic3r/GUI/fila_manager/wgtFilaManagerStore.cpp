@@ -1,9 +1,12 @@
 #include "wgtFilaManagerStore.h"
 #include "libslic3r/Utils.hpp"
-#include "slic3r/GUI/DeviceCore/TrayLabel.hpp"
+
+#include "slic3r/GUI/DeviceManager.hpp"
+#include "slic3r/GUI/DeviceCore/DevManager.h"
+#include "slic3r/GUI/DeviceCore/DevFilaSystem.h"
+#include "slic3r/GUI/DeviceCore/DevExtruderSystem.h"
 
 #include <boost/filesystem.hpp>
-#include <boost/log/trivial.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
@@ -12,9 +15,8 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
-#include <cstdint>
-#include <limits>
 #include <sstream>
+#include "libslic3r/Log.hpp"
 
 namespace Slic3r { namespace GUI {
 
@@ -80,16 +82,15 @@ nlohmann::json FilamentSpool::to_json() const
         {"device_name",     device_name},
         {"tray_label",      [this]() -> std::string {
             if (ams_id < 0 || slot_id.empty()) return {};
-            if (ams_id == VIRTUAL_TRAY_MAIN_ID || ams_id == VIRTUAL_TRAY_DEPUTY_ID)
-                return format_tray_label(ams_id);
             try {
                 std::size_t consumed = 0;
                 const int slot = std::stoi(slot_id, &consumed);
-                if (consumed != slot_id.size() || slot < 0 || slot > 3) return {};
-                const auto tray_id = std::int64_t(ams_id) * 4 + slot;
-                if (tray_id > std::numeric_limits<int>::max()) return {};
-                return format_tray_label(static_cast<int>(tray_id));
-            } catch (...) { return {}; }
+                if (consumed != slot_id.size() || slot < 0) return {};
+                return DevFilaSystem::GetTrayNameByAmsSlotId(dev_id, ams_id, slot, (DevAmsType)ams_type);
+            } catch (...) {
+                BOOST_LOG_TRIVIAL(warning) << current_exception_message();
+                return {};
+            }
         }()}
     };
 }
@@ -307,7 +308,9 @@ bool wgtFilaManagerStore::apply_patch(const std::string& spool_id, const nlohman
         if (!patch.contains(key)) return;
         const auto& v = patch.at(key);
         if (v.is_null()) return;
-        try { v.get_to(dst); } catch (...) {}
+        try { v.get_to(dst); } catch (...) {
+            BOOST_LOG_TRIVIAL(warning) << current_exception_message();
+        }
     };
     get_if("setting_id",      s.filament_id);
     get_if("brand",           s.brand);
@@ -445,7 +448,7 @@ bool wgtFilaManagerStore::force_mount_spool(const std::string& spool_id,
 {
     auto it = m_spools.find(spool_id);
     if (it == m_spools.end()) {
-        BOOST_LOG_TRIVIAL(warning) << "force_mount_spool: spool_id not found: " << spool_id;
+        BOOST_LOG_TRIVIAL(warning) << "spool_id not found: " << spool_id;
         return false;
     }
     FilamentSpool& s = it->second;
