@@ -1,6 +1,6 @@
 {
   "base_version": "2.9.0",
-  "source_tree_sha256": "17ae1997abafac82313f325f0ffbd7ab8e28e60f5c8033f28ab2cc6412650ac5",
+  "source_tree_sha256": "e75a5243f116bd8881030561951c9ff31d2fc69b4d1d728f4f741266a7cdde91",
   "patches": [
     {
       "vulnerability": "CVE-2026-113351",

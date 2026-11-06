@@ -11,8 +11,12 @@ else ()
     set(_wx_egl "")
 endif()
 
+set(_wx_expat_static "")
+set(_wx_patch_args "")
 if (MSVC)
     set(_wx_edge "-DwxUSE_WEBVIEW_EDGE=ON")
+    set(_wx_expat_static -DEXPAT_USE_STATIC_LIBS=ON)
+    set(_wx_patch_args PATCH_COMMAND ${PATCH_CMD} ${CMAKE_CURRENT_LIST_DIR}/0002-use-expat-target.patch)
 else ()
     set(_wx_edge "-DwxUSE_WEBVIEW_EDGE=OFF")
 endif ()
@@ -28,6 +32,7 @@ bambustudio_add_cmake_project(wxWidgets
     # Pin the reviewed Bambu wxWidgets commit; the commit records its submodule revisions.
     GIT_TAG abb542694ef4534a50e65c5b877b2774d02952ae
     DEPENDS ${PNG_PKG} ${ZLIB_PKG} ${EXPAT_PKG} ${TIFF_PKG} ${JPEG_PKG}
+    ${_wx_patch_args}
     CMAKE_ARGS
         -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         -DwxBUILD_PRECOMP=OFF
@@ -56,6 +61,7 @@ bambustudio_add_cmake_project(wxWidgets
         -DwxUSE_LIBJPEG=sys
         -DwxUSE_LIBTIFF=sys
         -DwxUSE_EXPAT=sys
+        ${_wx_expat_static}
         ${_wx_egl}
 )
 

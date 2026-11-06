@@ -94,6 +94,9 @@ if(WIN32)
     list(APPEND EXPAT_SOURCES random_rand_s.c)
 endif()
 add_library(expat ${EXPAT_SOURCES})
+if(NOT BUILD_SHARED_LIBS)
+    target_compile_definitions(expat INTERFACE XML_STATIC)
+endif()
 
 target_include_directories(expat PRIVATE ${PROJECT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
