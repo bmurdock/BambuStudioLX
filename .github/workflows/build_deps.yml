@@ -137,6 +137,7 @@ jobs:
             brew install automake texinfo nasm yasm x264
             brew unlink cmake || true
             brew tap-new $USER/old-cmake
+            brew tap --force homebrew/core
             brew extract --version=3.31.0 cmake $USER/old-cmake
             brew install $USER/old-cmake/cmake@3.31.0
             brew link --overwrite cmake@3.31.0
@@ -154,6 +155,7 @@ jobs:
             brew install automake texinfo nasm yasm x264
             brew unlink cmake || true
             brew tap-new $USER/old-cmake
+            brew tap --force homebrew/core
             brew extract --version=3.31.0 cmake $USER/old-cmake
             brew install $USER/old-cmake/cmake@3.31.0
             brew link --overwrite cmake@3.31.0
