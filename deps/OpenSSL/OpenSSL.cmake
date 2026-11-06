@@ -73,13 +73,8 @@ else()
     endif ()
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-set(url_str "https://github.com/openssl/openssl/archive/OpenSSL_1_1_1k.tar.gz")
-set(url_hash "SHA256=b92f9d3d12043c02860e5e602e50a73ed21a69947bcc74d391f41148e9f6aa95")
-else()
-set(url_str "https://github.com/openssl/openssl/archive/refs/tags/openssl-3.1.2.tar.gz")
-set(url_hash "SHA256=8c776993154652d0bb393f506d850b811517c8bd8d24b1008aef57fbe55d3f31")
-endif()
+set(url_str "https://www.openssl.org/source/openssl-3.5.9.tar.gz")
+set(url_hash "SHA256=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a")
 # set(url_str "https://github.com/openssl/openssl/archive/OpenSSL_1_1_1w.tar.gz")
 # set(url_hash "SHA256=2130E8C2FB3B79D1086186F78E59E8BC8D1A6AEDF17AB3907F4CB9AE20918C41")
 ExternalProject_Add(dep_OpenSSL
@@ -92,7 +87,6 @@ ExternalProject_Add(dep_OpenSSL
         "--prefix=${DESTDIR}/usr/local"
         ${_cross_comp_prefix_line}
         no-shared
-        no-asm
         no-tests
         no-ssl3-method
         no-dynamic-engine

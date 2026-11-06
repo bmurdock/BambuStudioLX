@@ -102,11 +102,15 @@ endif ()
 
 execute_process(
     COMMAND ${GIT_EXECUTABLE} rev-parse --is-inside-work-tree
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     RESULT_VARIABLE REV_PARSE_RESULT
     OUTPUT_VARIABLE REV_PARSE_OUTPUT
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+set(IN_GIT_REPO FALSE)
+unset(BINARY_DIR_REL)
 if((REV_PARSE_RESULT EQUAL 0) AND (REV_PARSE_OUTPUT STREQUAL "true"))
+    set(IN_GIT_REPO TRUE)
     # Find relative path from root to source used for adjusting patch command
     file(RELATIVE_PATH BINARY_DIR_REL  ${CMAKE_SOURCE_DIR}/.. ${CMAKE_BINARY_DIR})
 endif ()

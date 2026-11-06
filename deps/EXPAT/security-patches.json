@@ -1,0 +1,27 @@
+{
+  "base_version": "2.9.0",
+  "source_tree_sha256": "ac75cfd0713e078a15bc59c7dc805be7536937ea95749b20e67e96473537a1a4",
+  "patches": [
+    {
+      "vulnerability": "CVE-2026-113351",
+      "upstream_pr": "https://github.com/libexpat/libexpat/pull/1431",
+      "merge_commit": "d8f31e647a4d1eda088e89354f4769b0dad303d3",
+      "upstream_diff_sha256": "ca4989afa861ecff672dd79f330c8aecd8deac8547dec5efe5d1f953739d6c40",
+      "local_patch": "deps/EXPAT/patches/CVE-2026-113351.patch",
+      "local_patch_sha256": "8b232b50ec38534282cf8216b685eb20b3de32c9b661635e22fba1ca85c32528"
+    },
+    {
+      "vulnerability": "CVE-2026-115506",
+      "upstream_pr": "https://github.com/libexpat/libexpat/pull/1433",
+      "merge_commit": "c30145b28632b31f805d57f9838ba36b8db99367",
+      "upstream_diff_sha256": "f66dc30b84f0fcffa64c57dc9671befe289cc7c07b8f6a1d80d229a16a96768b",
+      "local_patch": "deps/EXPAT/patches/CVE-2026-115506.patch",
+      "local_patch_sha256": "7eb100ac9b64e9716f026fee91a467d5021c1ec0de4da58b0e62dcfc0a288bf5"
+    }
+  ],
+  "adaptations": [
+    "Preserve 2.9.0 signed-integer-overflow guards and int textLen casts.",
+    "Use the equivalent null-checked pointer subtraction because EXPAT_SAFE_PTR_DIFF is absent in 2.9.0.",
+    "Retain the int debug format for textLen; adjust patch context for the other backport."
+  ]
+}

@@ -63,3 +63,28 @@ jobs:
       arch: ${{ matrix.arch }}
       build-deps-only: ${{ inputs.build-deps-only || false }}
     secrets: inherit
+
+  attest_build:
+    name: Attest BambuStudio artifacts
+    needs: build_all
+    if: ${{ needs.build_all.result == 'success' && inputs.build-deps-only != true && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download produced BambuStudio artifacts
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+        with:
+          pattern: BambuStudio_*
+          path: attestation-subjects
+          merge-multiple: true
+
+      - name: Attest produced build artifacts
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: |
+            ${{ github.workspace }}/attestation-subjects/BambuStudio_Windows_*.zip
+            ${{ github.workspace }}/attestation-subjects/BambuStudio_Mac_*.zip
+            ${{ github.workspace }}/attestation-subjects/Bambu_Studio_ubuntu-*.AppImage

@@ -45,6 +45,18 @@ jobs:
         if: startsWith(inputs.os, 'windows')
         uses: microsoft/setup-msbuild@v2
 
+      - name: Install NASM on Windows
+        if: startsWith(inputs.os, 'windows')
+        shell: pwsh
+        run: |
+          choco install nasm --version=3.2.0 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "NASM installation failed: $LASTEXITCODE" }
+          $nasmDir = Join-Path $env:ProgramFiles 'NASM'
+          Add-Content -Path $env:GITHUB_PATH -Value $nasmDir
+          $env:Path = "$nasmDir;$env:Path"
+          nasm -v
+          if ($LASTEXITCODE -ne 0) { throw "NASM verification failed: $LASTEXITCODE" }
+
       - name: Get the date on Ubuntu and macOS
         if: ${{ !startsWith(inputs.os, 'windows') }}
         run: echo "date=$(date +'%Y%m%d')" >> $GITHUB_ENV
@@ -160,7 +172,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           cd ${{ github.workspace }}/deps
-          tar -zcvf "BambuStudio_dep_mac_${{ inputs.arch }}_$(date +"%Y%m%d").tar.gz" build
+          tar -zcvf "BambuStudio_dep_${{ inputs.os }}_${{ inputs.arch }}_$(date +"%Y%m%d").tar.gz" build
 
 
       - name: Build on Ubuntu
@@ -178,13 +190,13 @@ jobs:
         if: inputs.os == 'macos-15-intel' || inputs.os == 'macos-15' || inputs.os == 'macos-26'
         uses: actions/upload-artifact@v6
         with:
-          name: BambuStudio_dep_mac_${{ inputs.arch }}_${{ env.date }}
-          path: ${{ github.workspace }}/deps/BambuStudio_dep_mac_${{ inputs.arch }}*.tar.gz
+          name: BambuStudio_dep_${{ inputs.os }}_${{ inputs.arch }}_${{ env.date }}
+          path: ${{ github.workspace }}/deps/BambuStudio_dep_${{ inputs.os }}_${{ inputs.arch }}_*.tar.gz
 
       - name: clean artifacts
         if: inputs.os == 'macos-15-intel' || inputs.os == 'macos-15' || inputs.os == 'macos-26'
         working-directory: ${{ github.workspace }}
-        run: rm -rf ${{ github.workspace }}/deps/build/BambuStudio_dep_mac_${{ inputs.arch }}*.tar.gz
+        run: rm -rf ${{ github.workspace }}/deps/BambuStudio_dep_${{ inputs.os }}_${{ inputs.arch }}_*.tar.gz
 
       - name: Upload Windows artifacts
         if: inputs.os == 'windows-latest'

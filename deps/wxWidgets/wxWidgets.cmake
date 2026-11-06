@@ -25,7 +25,8 @@ endif ()
 
 bambustudio_add_cmake_project(wxWidgets
     GIT_REPOSITORY "https://github.com/bambulab/wxWidgets"
-    GIT_TAG master
+    # Pin the reviewed Bambu wxWidgets commit; the commit records its submodule revisions.
+    GIT_TAG abb542694ef4534a50e65c5b877b2774d02952ae
     DEPENDS ${PNG_PKG} ${ZLIB_PKG} ${EXPAT_PKG} ${TIFF_PKG} ${JPEG_PKG}
     CMAKE_ARGS
         -DCMAKE_POLICY_VERSION_MINIMUM=3.5

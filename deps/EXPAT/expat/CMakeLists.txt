@@ -59,17 +59,33 @@ if(NOT WIN32)
     evaluate_detection_results(EXPAT_WITH_SYS_GETRANDOM HAVE_SYSCALL_GETRANDOM "syscall SYS_getrandom" "Syscall SYS_getrandom")
 endif()
 
+# Keep the vendored build's historical feature set while using Expat 2.9's
+# refreshed parser sources. These values are required by the 2.9 templates.
+set(XML_CONTEXT_BYTES 1024)
+set(XML_GE 1)
 configure_file(expat_configure.h.cmake "${CMAKE_CURRENT_BINARY_DIR}/expat_configure.h")
 
 if (BUILD_SHARED_LIBS AND MSVC)
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
-add_library(expat
+set(EXPAT_SOURCES
     xmlparse.c
     xmlrole.c
     xmltok.c
+    xcs.c
+    random_arc4random.c
+    random_arc4random_buf.c
+    random_dev_urandom.c
+    random_getentropy.c
 )
+if(HAVE_SYSCALL_GETRANDOM)
+    list(APPEND EXPAT_SOURCES random_getrandom.c)
+endif()
+if(WIN32)
+    list(APPEND EXPAT_SOURCES random_rand_s.c)
+endif()
+add_library(expat ${EXPAT_SOURCES})
 
 target_include_directories(expat PRIVATE ${PROJECT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
@@ -91,7 +107,7 @@ include(CMakePackageConfigHelpers)
 
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"     
-    VERSION 1.95
+    VERSION 2.9.0
     COMPATIBILITY AnyNewerVersion
 )
 

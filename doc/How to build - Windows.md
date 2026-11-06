@@ -6,6 +6,9 @@ Install Following tools:
 - Cmake from [cmake.org](https://cmake.org/download/)
 - Git from [gitforwindows.org](https://gitforwindows.org/) 
 - Perl from [strawberryperl](https://strawberryperl.com/)
+- NASM from [nasm.us](https://www.nasm.us/) for OpenSSL's x64 assembly, including the x64 OpenSSL libraries used by ARM64EC builds. CI uses the [Chocolatey NASM 3.2.0 package](https://community.chocolatey.org/packages/nasm/3.2.0); install the same version from an elevated PowerShell prompt with `choco install nasm --version=3.2.0 --yes --no-progress` if Chocolatey is available.
+
+Add the NASM installation directory (normally `C:\Program Files\NASM`) to `PATH`. Open a new build shell and verify `nasm -v` succeeds before configuring dependencies. For the current PowerShell session, use `$env:Path = "${env:ProgramFiles}\NASM;$env:Path"`.
 
 ## building the deps
 Suppose you download the codes into D:/work/Projects/BambuStudio  

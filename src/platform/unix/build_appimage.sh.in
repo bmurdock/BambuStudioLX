@@ -1,10 +1,29 @@
 #!/bin/sh
-APPIMAGETOOLURL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+set -eu
+
+# Stable upstream release asset, verified against the GitHub release digest before use.
+APPIMAGETOOLURL="https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage"
+APPIMAGETOOL_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
 
 
 APP_IMAGE="@SLIC3R_APP_KEY@_ubu64.AppImage"
 
-wget ${APPIMAGETOOLURL} -O ../appimagetool.AppImage
+APPIMAGETOOL_DOWNLOAD="../appimagetool.AppImage.download"
+wget --no-verbose --https-only "${APPIMAGETOOLURL}" -O "${APPIMAGETOOL_DOWNLOAD}"
+
+if command -v sha256sum >/dev/null 2>&1; then
+    APPIMAGETOOL_ACTUAL_SHA256=$(sha256sum "${APPIMAGETOOL_DOWNLOAD}" | awk '{print $1}')
+elif command -v shasum >/dev/null 2>&1; then
+    APPIMAGETOOL_ACTUAL_SHA256=$(shasum -a 256 "${APPIMAGETOOL_DOWNLOAD}" | awk '{print $1}')
+else
+    echo "error: no SHA-256 utility available" >&2
+    exit 1
+fi
+if [ "${APPIMAGETOOL_ACTUAL_SHA256}" != "${APPIMAGETOOL_SHA256}" ]; then
+    echo "error: appimagetool SHA-256 mismatch" >&2
+    exit 1
+fi
+mv "${APPIMAGETOOL_DOWNLOAD}" ../appimagetool.AppImage
 chmod +x ../appimagetool.AppImage
 
 if [ -f /.dockerenv ] ; then # Only run if inside of a Docker Container
@@ -40,9 +59,9 @@ EOF
 
 
 if [ -f /.dockerenv ] ; then # Only run if inside of a Docker Container
-  ../appimagetool.AppImage --appimage-extract-and-run . $([ ! -z "${container}" ] && echo '--appimage-extract-and-run')
+  ../appimagetool.AppImage --appimage-extract-and-run . $([ ! -z "${container:-}" ] && echo '--appimage-extract-and-run')
 else
-  ../appimagetool.AppImage . $([ ! -z "${container}" ] && echo '--appimage-extract-and-run')
+  ../appimagetool.AppImage . $([ ! -z "${container:-}" ] && echo '--appimage-extract-and-run')
 fi
 
 mv @SLIC3R_APP_KEY@-x86_64.AppImage ${APP_IMAGE}
