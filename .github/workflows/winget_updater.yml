@@ -5,10 +5,41 @@ on:
 jobs:
   publish:
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
-      - uses: vedantmgoyal9/winget-releaser@main
-        with:
-          identifier: Bambulab.BambuStudio
-          version: ${{ github.event.release.tag_name }}
-          token: ${{ secrets.WINGET_TOKEN }}
-          installers-regex: '\.exe$'
+      - name: Prepare reviewed WinGet publisher
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scriptUrl = 'https://raw.githubusercontent.com/vedantmgoyal9/winget-releaser/b7370d4d152efdce803a26cc6ca9eee58cb2ad54/winget-releaser.ps1'
+          $scriptPath = Join-Path $env:RUNNER_TEMP 'winget-releaser.ps1'
+          $scriptSha256 = 'ea42cbf4970fb108787ff33522772c02cdad87a47cf30864de5da35c875fb3e8'
+          $komacUrl = 'https://github.com/russellbanks/Komac/releases/download/v2.17.1/komac-2.17.1-x86_64-pc-windows-msvc.exe'
+          $komacPath = Join-Path $env:RUNNER_TEMP 'komac.exe'
+          $komacSha256 = 'a97c002c5ffa15f232af117efac6774e755d27acc47eba00f1661033267d7438'
+
+          Invoke-WebRequest -Uri $scriptUrl -OutFile $scriptPath -UseBasicParsing
+          if ((Get-FileHash -Algorithm SHA256 -Path $scriptPath).Hash -ne $scriptSha256) {
+            throw 'winget-releaser.ps1 SHA-256 mismatch'
+          }
+          Invoke-WebRequest -Uri $komacUrl -OutFile $komacPath -UseBasicParsing
+          if ((Get-FileHash -Algorithm SHA256 -Path $komacPath).Hash -ne $komacSha256) {
+            throw 'Komac SHA-256 mismatch'
+          }
+
+      - name: Publish to WinGet
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          INPUT_IDENTIFIER: Bambulab.BambuStudio
+          INPUT_VERSION: ${{ github.event.release.tag_name }}
+          INPUT_INSTALLERS_REGEX: '\.exe$'
+          INPUT_MAX_VERSIONS_TO_KEEP: '0'
+          INPUT_RELEASE_REPOSITORY: ${{ github.repository }}
+          INPUT_RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:Path = "$env:RUNNER_TEMP;$env:Path"
+          & (Join-Path $env:RUNNER_TEMP 'winget-releaser.ps1')

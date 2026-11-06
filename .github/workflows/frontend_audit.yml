@@ -1,0 +1,196 @@
+name: Frontend dependency audit
+
+on:
+  push:
+    paths:
+      - 'src/slic3r/GUI/DeviceWeb/device_page/**'
+      - 'tests/web-e2e/**'
+      - 'deps/**'
+      - 'resources/web/**'
+      - 'scripts/security/**'
+      - '.github/workflows/frontend_audit.yml'
+  pull_request:
+    paths:
+      - 'src/slic3r/GUI/DeviceWeb/device_page/**'
+      - 'tests/web-e2e/**'
+      - 'deps/**'
+      - 'resources/web/**'
+      - 'scripts/security/**'
+      - '.github/workflows/frontend_audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-and-e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22.23.4
+
+      - name: Activate pnpm 10.34.9
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.34.9 --activate
+          pnpm --version
+
+      - name: Install device page dependencies
+        working-directory: src/slic3r/GUI/DeviceWeb/device_page
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit device page dependencies
+        working-directory: src/slic3r/GUI/DeviceWeb/device_page
+        run: pnpm audit --audit-level=low
+
+      - name: Check device page lint
+        working-directory: src/slic3r/GUI/DeviceWeb/device_page
+        run: pnpm lint
+
+      - name: Check device page typecheck and build
+        working-directory: src/slic3r/GUI/DeviceWeb/device_page
+        run: pnpm build
+
+      - name: Install web E2E dependencies
+        working-directory: tests/web-e2e
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit web E2E dependencies
+        working-directory: tests/web-e2e
+        run: pnpm audit --audit-level=low
+
+      - name: Check web E2E lint and typecheck
+        working-directory: tests/web-e2e
+        run: |
+          pnpm lint
+          pnpm typecheck
+
+      - name: Install Playwright Chromium
+        working-directory: tests/web-e2e
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run standalone bridge isolation test
+        working-directory: tests/web-e2e
+        run: pnpm exec playwright test tests/bridge-isolation.spec.ts --project=webview-only
+
+  source-sbom:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Download and verify Syft
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://github.com/anchore/syft/releases/download/v1.55.0/syft_1.55.0_linux_amd64.tar.gz'
+          expected='bb65249542db5fedeeb4d3f9b018b75e7264dbfbbb10486f044581a92f90490d'
+          curl --fail --location --proto '=https' --tlsv1.2 "$url" --output syft.tar.gz
+          actual=$(sha256sum syft.tar.gz | awk '{print $1}')
+          test "$actual" = "$expected"
+          tar -xzf syft.tar.gz syft
+          chmod 0755 syft
+
+      - name: Generate source and vendored inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p sbom
+          ./syft dir:deps --exclude '**/build/**' -o cyclonedx-json > sbom/native-recipes.cdx.json
+          ./syft dir:resources/web -o cyclonedx-json > sbom/vendored-browser-assets.cdx.json
+          {
+            echo '# Native dependency recipes and vendored browser assets (SHA-256)'
+            echo '# This inventory describes source and vendored inputs; it is not a claim about closed or unbuilt plugins.'
+            echo '# Syft native-recipes.cdx.json catalogs package metadata it can resolve; this file records source truth for recipes and browser assets.'
+            find deps resources/web -type f -print0 | sort -z | xargs -0 sha256sum
+          } > sbom/source-inputs.sha256
+          python3 scripts/security/generate_dependency_sbom.py sbom/authoritative-components.cdx.json
+
+      - name: Download and verify OSV-Scanner
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64'
+          expected='160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b'
+          curl --fail --location --proto '=https' --tlsv1.2 "$url" --output osv-scanner
+          test "$(sha256sum osv-scanner | awk '{print $1}')" = "$expected"
+          chmod 0755 osv-scanner
+
+      - name: Download and verify Grype
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://github.com/anchore/grype/releases/download/v0.121.0/grype_0.121.0_linux_amd64.tar.gz'
+          expected='64e07133d3486115de647a66581461dccf5c732748a0a3119077395565f15519'
+          curl --fail --location --proto '=https' --tlsv1.2 "$url" --output grype.tar.gz
+          test "$(sha256sum grype.tar.gz | awk '{print $1}')" = "$expected"
+          tar -xzf grype.tar.gz grype
+          chmod 0755 grype
+
+      - name: Scan native SBOM with Grype
+        id: grype-native
+        continue-on-error: true
+        shell: bash
+        run: ./grype sbom:sbom/authoritative-components.cdx.json --vex sbom/native-backports.vex.json --fail-on high -o json > sbom/native-grype.json
+
+      - name: Enforce native high-severity gate
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          report = json.load(open('sbom/native-grype.json', encoding='utf-8'))
+          high = [m for m in report.get('matches', []) if m.get('vulnerability', {}).get('severity', '').upper() in {'HIGH', 'CRITICAL'}]
+          if high:
+              raise SystemExit(f'{len(high)} high/critical native vulnerabilities found')
+          if os.environ.get('GRYPE_OUTCOME') != 'success':
+              raise SystemExit('Grype failed without reporting a high/critical finding')
+          PY
+        env:
+          GRYPE_OUTCOME: ${{ steps.grype-native.outcome }}
+
+      - name: Verify native vulnerability canary
+        shell: bash
+        run: |
+          set +e
+          ./grype sbom:scripts/security/native-vulnerable-fixture.cdx.json --fail-on negligible -o json > sbom/native-canary-grype.json
+          rc=$?
+          set -e
+          python3 - <<'PY'
+          import json
+          report = json.load(open('sbom/native-canary-grype.json', encoding='utf-8'))
+          expected = {
+              'openssl': 'CVE-2022-0778',
+              'curl': 'CVE-2023-38545',
+              'expat': 'CVE-2023-52425',
+          }
+          seen = {name: set() for name in expected}
+          for match in report.get('matches', []):
+              artifact = match.get('artifact', {})
+              name = artifact.get('name')
+              if name in seen:
+                  seen[name].add(match.get('vulnerability', {}).get('id'))
+          missing = {name: cve for name, cve in expected.items() if cve not in seen[name]}
+          if missing:
+              raise SystemExit(f'native vulnerability canary missing expected matches: {missing}')
+          PY
+          test "$rc" -ne 0
+
+      - name: Scan pnpm lockfiles with OSV-Scanner
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./osv-scanner scan source --lockfile src/slic3r/GUI/DeviceWeb/device_page/pnpm-lock.yaml --lockfile tests/web-e2e/pnpm-lock.yaml --all-vulns --format json --output-file sbom/pnpm-osv.json
+
+      - name: Upload SBOM and source inventory
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: frontend-native-sbom
+          path: sbom/
