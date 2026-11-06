@@ -40,6 +40,35 @@ std::string billion_laughs_fixture()
     return "<!DOCTYPE root [<!ENTITY e0 \"" + e0 + "\"><!ENTITY e1 \"" + e1 + "\"><!ENTITY e2 \"" + e2 + "\">]><root>&e2;</root>";
 }
 
+struct SubparserState
+{
+    bool empty_parse_ok{false};
+    bool final_parse_ok{false};
+    int processing_instructions{0};
+};
+
+void XMLCALL count_processing_instruction(void *user_data, const XML_Char *, const XML_Char *)
+{
+    ++static_cast<SubparserState *>(user_data)->processing_instructions;
+}
+
+int XMLCALL parse_empty_external_entity(XML_Parser parent, const XML_Char *context,
+                                        const XML_Char *, const XML_Char *, const XML_Char *)
+{
+    auto *state = static_cast<SubparserState *>(XML_GetUserData(parent));
+    XML_Parser child = XML_ExternalEntityParserCreate(parent, context, nullptr);
+    if (child == nullptr) return XML_STATUS_ERROR;
+    XML_SetUserData(child, state);
+    XML_SetProcessingInstructionHandler(child, count_processing_instruction);
+
+    state->empty_parse_ok = XML_Parse(child, "", 0, XML_FALSE) == XML_STATUS_OK;
+    const std::string instruction = "<?target data?>";
+    if (state->empty_parse_ok)
+        state->final_parse_ok = XML_Parse(child, instruction.data(), static_cast<int>(instruction.size()), XML_TRUE) == XML_STATUS_OK;
+    XML_ParserFree(child);
+    return state->empty_parse_ok && state->final_parse_ok ? XML_STATUS_OK : XML_STATUS_ERROR;
+}
+
 } // namespace
 
 TEST_CASE("Expat parser reset clears large attribute accounting", "[expat][security]")
@@ -70,4 +99,19 @@ TEST_CASE("Expat rejects entity amplification before character callbacks", "[exp
     REQUIRE(XML_Parse(owner.parser, input.data(), static_cast<int>(input.size()), XML_TRUE) == XML_STATUS_ERROR);
     REQUIRE(XML_GetErrorCode(owner.parser) == XML_ERROR_AMPLIFICATION_LIMIT_BREACH);
     REQUIRE(character_data_bytes == 0);
+}
+
+TEST_CASE("Expat accepts an initial empty non-final external entity parse", "[expat][security]")
+{
+    ParserOwner owner;
+    REQUIRE(owner.parser != nullptr);
+    SubparserState state;
+    XML_SetUserData(owner.parser, &state);
+    XML_SetExternalEntityRefHandler(owner.parser, parse_empty_external_entity);
+
+    const std::string document = "<!DOCTYPE root [<!ENTITY ext SYSTEM 'external.dtd'>]><root>&ext;</root>";
+    REQUIRE(XML_Parse(owner.parser, document.data(), static_cast<int>(document.size()), XML_TRUE) == XML_STATUS_OK);
+    REQUIRE(state.empty_parse_ok);
+    REQUIRE(state.final_parse_ok);
+    REQUIRE(state.processing_instructions == 1);
 }
