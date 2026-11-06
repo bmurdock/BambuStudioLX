@@ -1,6 +1,9 @@
 get_filename_component(_TEST_NAME ${CMAKE_CURRENT_LIST_DIR} NAME)
 add_executable(${_TEST_NAME}_tests
     ${_TEST_NAME}_tests_main.cpp
+    device_http_server_tests.cpp
+    certificate_verify_tests.cpp
+    http_transport_tests.cpp
     helio_retry_policy_tests.cpp
     helio_support_data_tests.cpp
     helio_recent_runs_tests.cpp

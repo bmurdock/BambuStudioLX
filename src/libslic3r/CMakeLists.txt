@@ -399,6 +399,9 @@ set(lisbslic3r_sources
     MinAreaBoundingBox.cpp
     miniz_extension.hpp
     miniz_extension.cpp
+    SafeZipExtraction.cpp
+    SafeZipExtraction.hpp
+    SafeArchivePath.hpp
     MarchingSquares.hpp
     Execution/Execution.hpp
     Execution/ExecutionSeq.hpp
@@ -521,6 +524,11 @@ add_library(libslic3r STATIC ${lisbslic3r_sources}
     "${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.h"
     ${OpenVDBUtils_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${lisbslic3r_sources})
+target_sources(libslic3r PRIVATE
+    ../slic3r/Utils/Http.cpp
+    ../slic3r/Utils/Http.hpp
+    ../slic3r/Utils/BBLUtil.cpp
+    ../slic3r/Utils/BBLUtil.hpp)
 
 if (SLIC3R_STATIC)
     set(CGAL_Boost_USE_STATIC_LIBS ON CACHE BOOL "" FORCE)
@@ -723,6 +731,9 @@ set(OCCT_LIBS
 
 
 target_link_libraries(libslic3r
+    libcurl
+    OpenSSL::SSL
+    OpenSSL::Crypto
     noise::noise
     libnest2d
     admesh
@@ -775,6 +786,10 @@ endif()
 if(SLIC3R_PROFILE)
     target_link_libraries(libslic3r Shiny)
 endif()
+
+if (SLIC3R_STATIC AND NOT SLIC3R_STATIC_EXCLUDE_CURL AND UNIX AND NOT APPLE)
+    target_compile_definitions(libslic3r PRIVATE OPENSSL_CERT_OVERRIDE)
+endif ()
 
 if (SLIC3R_PCH AND NOT SLIC3R_SYNTAXONLY)
     add_precompiled_header(libslic3r pchheader.hpp FORCEINCLUDE)

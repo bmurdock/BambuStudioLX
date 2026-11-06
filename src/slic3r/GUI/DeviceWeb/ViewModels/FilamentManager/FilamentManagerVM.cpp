@@ -122,6 +122,7 @@ FilamentManagerVM::FilamentManagerVM()
 
 FilamentManagerVM::~FilamentManagerVM()
 {
+    m_lifetime.reset();
 #if !BBL_RELEASE_TO_PUBLIC
     wxGetApp().set_fila_debug_sink(nullptr);
 #endif
@@ -506,7 +507,8 @@ nlohmann::json FilamentManagerVM::HandleConfig(const std::string& action, const 
         // fetch_filament_config is async; we synthesize an immediate "pending"
         // response, then report the actual config via a 'config/fetched'
         // report when the HTTP call returns.
-        sync->fetch_filament_config([this](const nlohmann::json& cfg) {
+        sync->fetch_filament_config([this, lifetime = std::weak_ptr<int>(m_lifetime)](const nlohmann::json& cfg) {
+            if (lifetime.expired()) return;
             m_cached_cloud_config = cfg;
             publish_debug_log("http", "info", "Cloud config fetched",
                               "Filament config returned from cloud",
@@ -534,10 +536,12 @@ nlohmann::json FilamentManagerVM::HandlePreset(const std::string& action, const 
         const std::string type   = payload.value("type", "");
         const std::string serial = payload.value("serial", "");
         const std::string client_request_id = payload.value("client_request_id", "");
-        wxGetApp().CallAfter([this, vendor, type, serial, client_request_id]() {
+        wxGetApp().CallAfter([this, lifetime = std::weak_ptr<int>(m_lifetime), vendor, type, serial, client_request_id]() {
+            if (lifetime.expired()) return;
             CreateFilamentWebDialog dlg(wxGetApp().mainframe, vendor, type, serial, true);
             const int res = dlg.ShowModal();
             const bool ok = res == wxID_OK;
+            if (lifetime.expired()) return;
             if (ok && wxGetApp().mainframe)
                 wxGetApp().mainframe->update_side_preset_ui();
             if (!m_bridge) return;

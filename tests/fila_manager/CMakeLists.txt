@@ -17,6 +17,8 @@ get_filename_component(_TEST_NAME ${CMAKE_CURRENT_LIST_DIR} NAME)
 
 add_executable(${_TEST_NAME}_tests
     ${_TEST_NAME}_tests_main.cpp
+    cloud_inventory_snapshot_tests.cpp
+    cloud_request_worker_tests.cpp
     ${PROJECT_SOURCE_DIR}/src/slic3r/GUI/fila_manager/wgtFilaManagerStore.cpp
 )
 

@@ -3,6 +3,7 @@
 #include "Widgets/CheckBox.hpp"
 #include "Widgets/Label.hpp"
 #include "GUI_App.hpp"
+#include "slic3r/Utils/CertificateVerify.hpp"
 #include "libslic3r/AppConfig.hpp"
 #include "I18N.hpp"
 #include "MsgDialog.hpp"
@@ -1251,6 +1252,13 @@ void MediaPlayCtrl::media_proc()
 
 bool MediaPlayCtrl::start_stream_service(bool *need_install)
 {
+    const auto* config = wxGetApp().app_config;
+    const bool allow_unverified = Slic3r::AllowUnverifiedPluginsForDevelopment(
+        config && config->get_bool("ignore_module_cert"));
+    if (!allow_unverified && !Slic3r::VerifyPluginDirectory((boost::filesystem::path(data_dir()) / "plugins").string())) {
+        if (need_install) *need_install = true;
+        return false;
+    }
 #ifdef __WIN32__
     auto tools_dir = boost::nowide::widen(data_dir())  + L"\\cameratools\\";
     auto file_source = tools_dir + L"bambu_source.exe";
@@ -1262,6 +1270,11 @@ bool MediaPlayCtrl::start_stream_service(bool *need_install)
     auto file_ffmpeg = tools_dir + "ffmpeg";
     auto file_ff_cfg = tools_dir + "ffmpeg.cfg";
 #endif
+    if (!allow_unverified && !Slic3r::VerifyCameraToolsDirectory(
+            (boost::filesystem::path(data_dir()) / "cameratools").string())) {
+        if (need_install) *need_install = true;
+        return false;
+    }
     if (!boost::filesystem::exists(file_source) || !boost::filesystem::exists(file_ffmpeg) || !boost::filesystem::exists(file_ff_cfg)) {
         if (need_install) *need_install = true;
         return false;
@@ -1287,8 +1300,10 @@ bool MediaPlayCtrl::start_stream_service(bool *need_install)
         for (auto dll : {L"BambuSource.dll", L"live555.dll", L"agora_rtc_sdk.dll", L"libaosl.dll", L"libagora-ffmpeg.dll", L"libagora-soundtouch.dll"}) {
             auto file_dll  = tools_dir + dll;
             auto file_dll2 = plugins_dir + dll;
-            if (!boost::filesystem::exists(file_dll) || boost::filesystem::last_write_time(file_dll) != boost::filesystem::last_write_time(file_dll2))
+            if (!boost::filesystem::exists(file_dll) || boost::filesystem::last_write_time(file_dll) != boost::filesystem::last_write_time(file_dll2) ||
+                (!allow_unverified && !Slic3r::VerifyPluginFile(boost::nowide::narrow(file_dll))))
                 boost::filesystem::copy_file(file_dll2, file_dll, boost::filesystem::copy_option::overwrite_if_exists);
+            if (!allow_unverified && !Slic3r::VerifyPluginFile(boost::nowide::narrow(file_dll))) return false;
         }
         boost::process::child process_source(file_source, file_url2.ToStdWstring(), boost::process::start_dir(tools_dir),
                                              boost::process::windows::create_no_window,

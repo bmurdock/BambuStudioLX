@@ -1,5 +1,7 @@
 #include "wxMediaCtrl2.h"
 #include "I18N.hpp"
+#include "GUI_App.hpp"
+#include "slic3r/Utils/CertificateVerify.hpp"
 #include "libslic3r/Utils.hpp"
 #include <wx/log.h>
 #include <wx/msgdlg.h>
@@ -91,12 +93,32 @@ void wxMediaCtrl2::Load(wxURI url)
         boost::filesystem::path data_dir_path(data_dir_str);
         auto                    dll_path = data_dir_path / "plugins" / "BambuSource.dll";
 
+        const auto* config = Slic3r::GUI::wxGetApp().app_config;
+        const bool allow_unverified = Slic3r::AllowUnverifiedPluginsForDevelopment(
+            config && config->get_bool("ignore_module_cert"));
+        const bool installed_trusted = Slic3r::VerifyPluginDirectory(dll_path.parent_path().string()) &&
+                                       Slic3r::VerifyPluginFile(dll_path.string());
+        const bool registered_trusted = path.empty() ||
+            (Slic3r::VerifyPluginDirectory(boost::filesystem::path(path.ToUTF8().data()).parent_path().string()) &&
+             Slic3r::VerifyPluginFile(path.ToUTF8().data()));
+        if (!allow_unverified && (!installed_trusted || !registered_trusted)) {
+            wxLogWarning("Refusing unauthenticated BambuSource media component");
+            m_error = 104;
+            wxMediaEvent event(wxEVT_MEDIA_STATECHANGED);
+            event.SetId(GetId());
+            event.SetEventObject(this);
+            wxPostEvent(this, event);
+            return;
+        }
+
         if (path.empty() || !wxFile::Exists(path) || clsid != CLSID_BAMBU_SOURCE) {
             if (boost::filesystem::exists(dll_path)) {
                 CallAfter(
-                    [dll_path] {
+                    [dll_path, allow_unverified] {
                     int res = wxMessageBox(_L("BambuSource has not correctly been registered for media playing! Press Yes to re-register it."), _L("Error"), wxYES_NO | wxICON_ERROR);
                     if (res == wxYES) {
+                        if (!allow_unverified && (!Slic3r::VerifyPluginDirectory(dll_path.parent_path().string()) ||
+                            !Slic3r::VerifyPluginFile(dll_path.string()))) return;
                         auto path = dll_path.wstring();
                         if (path.find(L' ') != std::wstring::npos)
                             path = L"\"" + path + L"\"";

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <filesystem>
 #if defined(_MSC_VER) || defined(_WIN32)
 #include <Windows.h>
 #else
@@ -19,6 +20,7 @@ using namespace BBL;
 namespace Slic3r {
 
 #define BAMBU_SOURCE_LIBRARY "BambuSource"
+static bool source_allow_unverified = false;
 
 #if defined(_MSC_VER) || defined(_WIN32)
 static HMODULE networking_module = NULL;
@@ -197,83 +199,42 @@ int NetworkAgent::initialize_network_module(bool using_backup, bool validate_cer
     if (using_backup) {
         plugin_folder = plugin_folder/"backup";
     }
-    std::optional<SignerSummary> self_cert_summary, module_cert_summary;
-    if (validate_cert)
-        self_cert_summary = SummarizeSelf();
-    else
-        BOOST_LOG_TRIVIAL(info) << "wouldn't validate networking dll cert";
-    if (!self_cert_summary)
-        BOOST_LOG_TRIVIAL(info) << "self cert not exist";
-
-    //first load the library
+    const bool allow_unverified = AllowUnverifiedPluginsForDevelopment(!validate_cert);
+    source_allow_unverified = allow_unverified;
+    const auto load_plugin = [allow_unverified](const std::string& path) {
+        if (!VerifyPluginDirectory(std::filesystem::u8path(path).parent_path().u8string()) || !VerifyPluginFile(path)) {
+            if (!allow_unverified) {
+                BOOST_LOG_TRIVIAL(error) << "Refusing unauthenticated networking plugin: " << PathSanitizer::sanitize(path);
 #if defined(_MSC_VER) || defined(_WIN32)
-    library = plugin_folder.string() + "\\" + std::string(BAMBU_NETWORK_LIBRARY) + ".dll";
-    wchar_t lib_wstr[128];
-    memset(lib_wstr, 0, sizeof(lib_wstr));
-    ::MultiByteToWideChar(CP_UTF8, NULL, library.c_str(), strlen(library.c_str())+1, lib_wstr, sizeof(lib_wstr) / sizeof(lib_wstr[0]));
-    if (self_cert_summary) {
-        module_cert_summary = SummarizeModule(library);
-        if (module_cert_summary) {
-            if (IsSamePublisher(*self_cert_summary, *module_cert_summary))
-                networking_module = LoadLibrary(lib_wstr);
-            else
-                BOOST_LOG_TRIVIAL(info) << "module is from another publisher:" << module_cert_summary->as_print();
-        }
-        else
-            BOOST_LOG_TRIVIAL(info) << "module_cert is null";
-    } else
-        networking_module = LoadLibrary(lib_wstr);
-    if (!networking_module) {
-        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", try load library directly from current directory");
-
-        std::string library_path = get_libpath_in_current_directory(std::string(BAMBU_NETWORK_LIBRARY));
-        if (library_path.empty()) {
-            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", can not get path in current directory for %1%") % BAMBU_NETWORK_LIBRARY;
-            return -1;
-        }
-        memset(lib_wstr, 0, sizeof(lib_wstr));
-        ::MultiByteToWideChar(CP_UTF8, NULL, library_path.c_str(), strlen(library_path.c_str())+1, lib_wstr, sizeof(lib_wstr) / sizeof(lib_wstr[0]));
-        if (self_cert_summary) {
-            module_cert_summary = SummarizeModule(library_path);
-            if (module_cert_summary) {
-                if (IsSamePublisher(*self_cert_summary, *module_cert_summary))
-                    networking_module = LoadLibrary(lib_wstr);
-                else
-                    BOOST_LOG_TRIVIAL(info) << "module is from another publisher:" << module_cert_summary->as_print();
+                return HMODULE(nullptr);
+#else
+                return static_cast<void*>(nullptr);
+#endif
             }
-            else
-                BOOST_LOG_TRIVIAL(info) << "module_cert is null";
+            BOOST_LOG_TRIVIAL(warning) << "Development-only unsigned plugin bypass explicitly enabled";
         }
-        else
-            networking_module = LoadLibrary(lib_wstr);
+#if defined(_MSC_VER) || defined(_WIN32)
+        const auto native = std::filesystem::absolute(std::filesystem::u8path(path)).wstring();
+        return LoadLibraryExW(native.c_str(), nullptr,
+                              LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+#else
+        return dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+#endif
+    };
+#if defined(_MSC_VER) || defined(_WIN32)
+    library = (plugin_folder / (std::string(BAMBU_NETWORK_LIBRARY) + ".dll")).string();
+    networking_module = load_plugin(library);
+    if (!networking_module) {
+        const auto fallback = get_libpath_in_current_directory(BAMBU_NETWORK_LIBRARY);
+        if (!fallback.empty()) networking_module = load_plugin(fallback);
     }
 #else
-    #if defined(__WXMAC__)
-    library = plugin_folder.string() + "/" + std::string("lib") + std::string(BAMBU_NETWORK_LIBRARY) + ".dylib";
-    #else
-    library = plugin_folder.string() + "/" + std::string("lib") + std::string(BAMBU_NETWORK_LIBRARY) + ".so";
-    #endif
-    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", line %1%, loading network module, using_backup %2%\n")%__LINE__ %using_backup;
-    module_cert_summary = SummarizeModule(library);
-    if (self_cert_summary) {
-        module_cert_summary = SummarizeModule(library);
-        if (module_cert_summary) {
-            if (IsSamePublisher(*self_cert_summary, *module_cert_summary))
-                networking_module = dlopen(library.c_str(), RTLD_LAZY);
-            else
-                BOOST_LOG_TRIVIAL(info) << "module is from another publisher:" << module_cert_summary->as_print();
-        }
-        else
-            BOOST_LOG_TRIVIAL(info) << "module_cert is null";
-    }
-    else
-        networking_module = dlopen( library.c_str(), RTLD_LAZY);
-    if (!networking_module) {
-        char* dll_error = dlerror();
-        std::string err       = dll_error ? std::string(dll_error) : std::string("(null)");
-        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", error, dlerror is %1%") % err;
-    }
-    BOOST_LOG_TRIVIAL(info) << boost::format("after dlopen, network_module is %1%") % networking_module;
+#if defined(__WXMAC__)
+    library = (plugin_folder / (std::string("lib") + BAMBU_NETWORK_LIBRARY + ".dylib")).string();
+#else
+    library = (plugin_folder / (std::string("lib") + BAMBU_NETWORK_LIBRARY + ".so")).string();
+#endif
+    networking_module = load_plugin(library);
 #endif
 
     if (!networking_module) {
@@ -552,40 +513,23 @@ void* NetworkAgent::get_bambu_source_entry()
     boost::filesystem::path data_dir_path(data_dir_str);
     auto plugin_folder = data_dir_path / "plugins";
 #if defined(_MSC_VER) || defined(_WIN32)
-    wchar_t lib_wstr[128];
-
-    //goto load bambu source
-    library = plugin_folder.string() + "/" + std::string(BAMBU_SOURCE_LIBRARY) + ".dll";
-    memset(lib_wstr, 0, sizeof(lib_wstr));
-    ::MultiByteToWideChar(CP_UTF8, NULL, library.c_str(), strlen(library.c_str())+1, lib_wstr, sizeof(lib_wstr) / sizeof(lib_wstr[0]));
-    source_module = LoadLibrary(lib_wstr);
-    if (!source_module) {
-        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", try load BambuSource directly from current directory");
-        std::string library_path = get_libpath_in_current_directory(std::string(BAMBU_SOURCE_LIBRARY));
-        if (library_path.empty()) {
-            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", can not get path in current directory for %1%") % BAMBU_SOURCE_LIBRARY;
-            return source_module;
-        }
-        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", line %1%")%__LINE__;
-        memset(lib_wstr, 0, sizeof(lib_wstr));
-        ::MultiByteToWideChar(CP_UTF8, NULL, library_path.c_str(), strlen(library_path.c_str()) + 1, lib_wstr, sizeof(lib_wstr) / sizeof(lib_wstr[0]));
-        source_module = LoadLibrary(lib_wstr);
+    library = (plugin_folder / (std::string(BAMBU_SOURCE_LIBRARY) + ".dll")).string();
+#elif defined(__WXMAC__)
+    library = (plugin_folder / (std::string("lib") + BAMBU_SOURCE_LIBRARY + ".dylib")).string();
+#else
+    library = (plugin_folder / (std::string("lib") + BAMBU_SOURCE_LIBRARY + ".so")).string();
+#endif
+    if (!source_allow_unverified &&
+        (!VerifyPluginDirectory(plugin_folder.string()) || !VerifyPluginFile(library))) {
+        BOOST_LOG_TRIVIAL(error) << "Refusing unauthenticated BambuSource plugin";
+        return nullptr;
     }
+#if defined(_MSC_VER) || defined(_WIN32)
+    const auto native = std::filesystem::absolute(std::filesystem::u8path(library)).wstring();
+    source_module = LoadLibraryExW(native.c_str(), nullptr,
+                                  LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
 #else
-#if defined(__WXMAC__)
-    library = plugin_folder.string() + "/" + std::string("lib") + std::string(BAMBU_SOURCE_LIBRARY) + ".dylib";
-#else
-    library = plugin_folder.string() + "/" + std::string("lib") + std::string(BAMBU_SOURCE_LIBRARY) + ".so";
-#endif
-    source_module = dlopen( library.c_str(), RTLD_LAZY);
-    /*if (!source_module) {
-#if defined(__WXMAC__)
-        library = std::string("lib") + BAMBU_SOURCE_LIBRARY + ".dylib";
-#else
-        library = std::string("lib") + BAMBU_SOURCE_LIBRARY + ".so";
-#endif
-        source_module = dlopen( library.c_str(), RTLD_LAZY);
-    }*/
+    source_module = dlopen(library.c_str(), RTLD_NOW | RTLD_LOCAL);
 #endif
 
     return source_module;

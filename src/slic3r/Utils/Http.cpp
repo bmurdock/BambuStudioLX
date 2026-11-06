@@ -503,6 +503,19 @@ Http& Http::timeout_max(long timeout)
     return *this;
 }
 
+Http& Http::https_only()
+{
+	if (!p) return *this;
+#if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
+	::curl_easy_setopt(p->curl, CURLOPT_PROTOCOLS_STR, "https");
+	::curl_easy_setopt(p->curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+#else
+	::curl_easy_setopt(p->curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+	::curl_easy_setopt(p->curl, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
+#endif
+	return *this;
+}
+
 Http& Http::size_limit(size_t sizeLimit)
 {
 	if (p) { p->limit = sizeLimit; }

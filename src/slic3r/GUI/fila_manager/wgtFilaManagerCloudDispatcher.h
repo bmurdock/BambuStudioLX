@@ -68,6 +68,8 @@ public:
 
     // Clear any not-yet-started push ops.  Does not cancel the in-flight op.
     void clear_pending();
+    // Called after the client invalidates and drains the old session.
+    void reset_session();
 
     // Observable state.
     bool        is_busy()            const { return m_busy; }

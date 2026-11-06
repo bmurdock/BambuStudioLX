@@ -4,6 +4,7 @@
 #include "slic3r/Utils/Http.hpp"
 #include "slic3r/Utils/NetworkAgent.hpp"
 #include <algorithm>
+#include <boost/asio/post.hpp>
 
 namespace Slic3r {
 
@@ -203,9 +204,11 @@ void HttpServer::start()
 void HttpServer::stop()
 {
     if (!running_.exchange(false)) return;
-    boost::system::error_code ec;
-    acceptor_.close(ec);
-    io_.stop();
+    boost::asio::post(io_, [this] {
+        boost::system::error_code ec;
+        acceptor_.close(ec);
+        io_.stop();
+    });
     if (guard_) guard_.reset();
     if (worker_.joinable()) worker_.join();
     io_.restart();
@@ -364,18 +367,22 @@ void session::handle_login()
             do_write_302(*login_params, false);
         }
         else {
-            NetworkAgent *agent = wxGetApp().getAgent();
-            agent->change_user(login_info);
-            if (agent->is_user_login()) {
-                wxGetApp().request_user_login(1);
-                BOOST_LOG_TRIVIAL(info) << "third_party_login: all good, login successful";
-                do_write_302(*login_params, true);
-            }
-            else {
-                BOOST_LOG_TRIVIAL(info) << "third_party_login: after applying the login information, the application remains unlogged, login failed";
-                do_write_302(*login_params, false);
-            }
-            GUI::wxGetApp().CallAfter([this] { wxGetApp().ShowUserLogin(false); });
+            // Account transitions and filament callbacks share the UI thread.
+            // Drain the previous session before changing the plugin identity.
+            auto self = shared_from_this();
+            GUI::wxGetApp().CallAfter([self, login_info, params = *login_params] {
+                auto& app = GUI::wxGetApp();
+                if (app.is_closing()) return;
+                app.reset_filament_session();
+                auto* agent = app.getAgent();
+                if (agent) agent->change_user(login_info);
+                const bool logged_in = agent && agent->is_user_login();
+                if (logged_in) app.request_user_login(1);
+                app.ShowUserLogin(false);
+                boost::asio::post(self->socket_.get_executor(), [self, params, logged_in] {
+                    self->do_write_302(params, logged_in);
+                });
+            });
         }
     }
     else {

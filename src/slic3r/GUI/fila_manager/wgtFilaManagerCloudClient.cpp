@@ -4,15 +4,11 @@
 #include "slic3r/Utils/NetworkAgent.hpp"
 
 #include <boost/log/trivial.hpp>
-#include <thread>
+
 
 namespace Slic3r { namespace GUI {
 
 namespace {
-
-using SuccessFn = wgtFilaManagerCloudClient::SuccessFn;
-using ErrorFn   = wgtFilaManagerCloudClient::ErrorFn;
-using RequestFn = std::function<int(NetworkAgent*, std::string&)>;
 
 void emit_http_debug(const std::string& level,
                      const std::string& title,
@@ -20,15 +16,6 @@ void emit_http_debug(const std::string& level,
                      const nlohmann::json& detail = nlohmann::json::object())
 {
     wxGetApp().emit_fila_debug_log("http", level, title, summary, detail);
-}
-
-nlohmann::json parse_json_response(const std::string& resp_body)
-{
-    try {
-        return nlohmann::json::parse(resp_body);
-    } catch (const std::exception&) {
-        return nlohmann::json{{"raw", resp_body}};
-    }
 }
 
 int parse_int(const std::map<std::string, std::string>& query, const std::string& key, int default_value)
@@ -49,59 +36,69 @@ NetworkAgent* get_agent()
     return wxGetApp().getAgent();
 }
 
-void dispatch_agent_request(const std::string& action,
-                            const nlohmann::json& request_detail,
-                            RequestFn request,
-                            SuccessFn on_ok,
-                            ErrorFn on_err)
+} // namespace
+
+wgtFilaManagerCloudClient::~wgtFilaManagerCloudClient() { shutdown(); }
+
+void wgtFilaManagerCloudClient::reset_session()
 {
-    emit_http_debug("info",
-                    "NetworkAgent " + action,
-                    "Dispatching filament cloud request through NetworkAgent",
-                    request_detail);
-
-    std::thread([action, request_detail, request = std::move(request), on_ok = std::move(on_ok), on_err = std::move(on_err)]() mutable {
-        NetworkAgent* agent = get_agent();
-        if (!agent) {
-            wxGetApp().CallAfter([on_err, action]() {
-                emit_http_debug("error",
-                                "NetworkAgent " + action + " failed",
-                                "NetworkAgent is unavailable",
-                                {{"action", action}, {"ret_code", BAMBU_NETWORK_ERR_INVALID_HANDLE}});
-                if (on_err)
-                    on_err(BAMBU_NETWORK_ERR_INVALID_HANDLE, "network agent unavailable");
-            });
-            return;
-        }
-
-        std::string response_body;
-        int ret = request(agent, response_body);
-
-        if (ret == BAMBU_NETWORK_SUCCESS) {
-            auto parsed = parse_json_response(response_body);
-            wxGetApp().CallAfter([on_ok, action, parsed = std::move(parsed), response_body]() mutable {
-                emit_http_debug("info",
-                                "NetworkAgent " + action + " success",
-                                "Filament cloud request completed via NetworkAgent",
-                                {{"action", action}, {"response", parsed}, {"raw_response", response_body}});
-                if (on_ok)
-                    on_ok(parsed);
-            });
-            return;
-        }
-
-        wxGetApp().CallAfter([on_err, action, ret, response_body]() {
-            emit_http_debug("error",
-                            "NetworkAgent " + action + " failed",
-                            "Filament cloud request failed in NetworkAgent",
-                            {{"action", action}, {"ret_code", ret}, {"body", response_body}});
-            if (on_err)
-                on_err(ret, response_body.empty() ? "network request failed" : response_body);
-        });
-    }).detach();
+    ++*m_generation;
+    m_worker.cancel_pending_and_wait();
 }
 
-} // namespace
+void wgtFilaManagerCloudClient::shutdown()
+{
+    ++*m_generation;
+    m_worker.shutdown();
+}
+
+void wgtFilaManagerCloudClient::dispatch_agent_request(
+    const std::string& action, const nlohmann::json& detail,
+    RequestFn request, SuccessFn on_ok, ErrorFn on_err)
+{
+    // Capture application services on the UI thread. Shutdown joins the worker
+    // before the application destroys the agent or any request consumers.
+    auto* app = wxTheApp;
+    NetworkAgent* agent = get_agent();
+    const auto generation = m_generation;
+    const auto expected = generation->load();
+    const std::string user_id = agent ? agent->get_user_id() : std::string();
+    emit_http_debug("info", "NetworkAgent " + action,
+                    "Dispatching filament cloud request through NetworkAgent", detail);
+    m_worker.submit([app, agent, generation, expected, user_id, action,
+                     request = std::move(request), on_ok = std::move(on_ok), on_err = std::move(on_err)]() mutable {
+        int ret = BAMBU_NETWORK_ERR_INVALID_HANDLE;
+        std::string body;
+        nlohmann::json parsed;
+        try {
+            if (generation->load() != expected || !agent ||
+                !agent->is_user_login() || agent->get_user_id() != user_id) return;
+            ret = request(agent, body);
+            if (ret == BAMBU_NETWORK_SUCCESS) parsed = nlohmann::json::parse(body);
+        } catch (const std::exception& ex) {
+            ret = BAMBU_NETWORK_ERR_INVALID_HANDLE;
+            body = ex.what();
+        }
+        if (generation->load() != expected) return;
+        app->CallAfter([generation, expected, user_id, action, ret, body = std::move(body),
+                        parsed = std::move(parsed), on_ok = std::move(on_ok), on_err = std::move(on_err)]() mutable {
+            // This guard is evaluated before touching owners captured by the
+            // callbacks, including after shutdown with a queued UI reply.
+            if (generation->load() != expected) return;
+            auto* current_agent = get_agent();
+            if (!current_agent || !current_agent->is_user_login() || current_agent->get_user_id() != user_id) return;
+            if (ret == BAMBU_NETWORK_SUCCESS) {
+                emit_http_debug("info", "NetworkAgent " + action + " success",
+                                "Filament cloud request completed", {{"action", action}, {"response", parsed}});
+                if (on_ok) on_ok(parsed);
+            } else {
+                emit_http_debug("error", "NetworkAgent " + action + " failed",
+                                "Filament cloud request failed", {{"action", action}, {"ret_code", ret}});
+                if (on_err) on_err(ret, body.empty() ? "network request failed" : body);
+            }
+        });
+    });
+}
 
 bool wgtFilaManagerCloudClient::check_login(ErrorFn& on_err) const
 {

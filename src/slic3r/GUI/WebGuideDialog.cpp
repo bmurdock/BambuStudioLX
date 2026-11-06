@@ -617,6 +617,7 @@ void GuideFrame::OnScriptMessage(wxWebViewEvent &evt)
                     agent->set_country_code(country_code);
                     if (wxGetApp().is_user_login()) {
                         bLogin = true;
+                        wxGetApp().reset_filament_session();
                         agent->user_logout();
                     }
                 }

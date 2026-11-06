@@ -1,6 +1,6 @@
 #include "wgtFilaManagerStore.h"
 #include "libslic3r/Utils.hpp"
-#include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/DeviceCore/TrayLabel.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/log/trivial.hpp>
@@ -12,6 +12,8 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <cstdint>
+#include <limits>
 #include <sstream>
 
 namespace Slic3r { namespace GUI {
@@ -78,9 +80,15 @@ nlohmann::json FilamentSpool::to_json() const
         {"device_name",     device_name},
         {"tray_label",      [this]() -> std::string {
             if (ams_id < 0 || slot_id.empty()) return {};
+            if (ams_id == VIRTUAL_TRAY_MAIN_ID || ams_id == VIRTUAL_TRAY_DEPUTY_ID)
+                return format_tray_label(ams_id);
             try {
-                int tray_id = ams_id * 4 + std::stoi(slot_id);
-                return wxGetApp().transition_tridid(tray_id).ToStdString();
+                std::size_t consumed = 0;
+                const int slot = std::stoi(slot_id, &consumed);
+                if (consumed != slot_id.size() || slot < 0 || slot > 3) return {};
+                const auto tray_id = std::int64_t(ams_id) * 4 + slot;
+                if (tray_id > std::numeric_limits<int>::max()) return {};
+                return format_tray_label(static_cast<int>(tray_id));
             } catch (...) { return {}; }
         }()}
     };

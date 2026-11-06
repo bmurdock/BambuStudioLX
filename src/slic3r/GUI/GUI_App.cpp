@@ -75,6 +75,9 @@
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Thread.hpp"
 #include "libslic3r/miniz_extension.hpp"
+#include "libslic3r/SafeZipExtraction.hpp"
+#include "slic3r/Utils/CertificateVerify.hpp"
+#include "slic3r/GUI/DeviceCore/TrayLabel.hpp"
 #include "libslic3r/Utils.hpp"
 
 #include "GUI.hpp"
@@ -1671,6 +1674,14 @@ static std::string decode(std::string const& extra, std::string const& path = {}
     return Slic3r::decode_path(path.c_str());
 }
 
+static fs::path plugin_download_path(const std::string& package_name)
+{
+    if (package_name.empty() || package_name == "." || package_name == ".." ||
+        package_name.find_first_of("/\\:") != std::string::npos)
+        throw std::invalid_argument("Invalid plugin package name");
+    return fs::path(data_dir()) / "cache" / "plugin-downloads" / package_name;
+}
+
 int GUI_App::download_plugin(std::string name, std::string package_name, InstallProgressFn pro_fn, WasCancelledFn cancel_fn)
 {
     int result = 0;
@@ -1691,7 +1702,9 @@ int GUI_App::download_plugin(std::string name, std::string package_name, Install
     BOOST_LOG_TRIVIAL(info) << "[download_plugin]: enter";
     m_networking_cancel_update = false;
     // get temp path
-    fs::path target_file_path = (fs::temp_directory_path() / package_name);
+    fs::path target_file_path = plugin_download_path(package_name);
+    fs::create_directories(target_file_path.parent_path());
+    fs::permissions(target_file_path.parent_path(), fs::owner_all);
     fs::path tmp_path = target_file_path;
     tmp_path += format(".%1%%2%", get_current_pid(), ".tmp");
 
@@ -1711,7 +1724,7 @@ int GUI_App::download_plugin(std::string name, std::string package_name, Install
     std::string download_url;
     Slic3r::Http http_url = Slic3r::Http::get(url);
     BOOST_LOG_TRIVIAL(info) << "[download_plugin]: check the plugin from " << url;
-    http_url.timeout_connect(TIMEOUT_CONNECT)
+    http_url.https_only().timeout_connect(TIMEOUT_CONNECT)
         .timeout_max(TIMEOUT_RESPONSE)
         .on_complete(
         [&download_url](std::string body, unsigned status) {
@@ -1734,7 +1747,9 @@ int GUI_App::download_plugin(std::string name, std::string package_name, Install
                                     BOOST_LOG_TRIVIAL(info) << "[download_plugin]: get version of settings's type, " << sub_iter.value();
                                 }
                                 else if (boost::iequals(sub_iter.key(), "version")) {
-                                    version = *(Semver::parse(sub_iter.value()));
+                                    const auto parsed_version = Semver::parse(sub_iter.value());
+                                    if (!parsed_version) throw std::runtime_error("Invalid plugin version");
+                                    version = *parsed_version;
                                 }
                                 else if (boost::iequals(sub_iter.key(), "description")) {
                                     description = sub_iter.value();
@@ -1786,7 +1801,7 @@ int GUI_App::download_plugin(std::string name, std::string package_name, Install
     }
 
 
-    if (download_url.empty()) {
+    if (download_url.empty() || download_url.compare(0, 8, "https://") != 0) {
         BOOST_LOG_TRIVIAL(info) << "[download_plugin 1]: no available plugin found for this app version: " << SLIC3R_VERSION;
         if (pro_fn) pro_fn(InstallStatusDownloadFailed, 0, cancel);
         j["result"] = "failed";
@@ -1813,6 +1828,7 @@ int GUI_App::download_plugin(std::string name, std::string package_name, Install
 
     // download
     Slic3r::Http http = Slic3r::Http::get(download_url);
+    http.https_only().size_limit(256 * 1024 * 1024).timeout_connect(TIMEOUT_CONNECT).timeout_max(TIMEOUT_RESPONSE);
     int reported_percent = 0;
     http.on_progress(
         [this, &pro_fn, cancel_fn, &result, &reported_percent, &err_msg](Slic3r::Http::Progress progress, bool& cancel) {
@@ -1835,14 +1851,17 @@ int GUI_App::download_plugin(std::string name, std::string package_name, Install
                 result = -1;
             }
         })
-        .on_complete([&pro_fn, tmp_path, target_file_path](std::string body, unsigned status) {
+        .on_complete([&pro_fn, &result, tmp_path, target_file_path](std::string body, unsigned status) {
             BOOST_LOG_TRIVIAL(info) << "[download_plugin 2] completed";
             bool cancel = false;
             int percent = 0;
             fs::fstream file(tmp_path, std::ios::out | std::ios::binary | std::ios::trunc);
             file.write(body.c_str(), body.size());
             file.close();
-            fs::rename(tmp_path, target_file_path);
+            if (!file) { result = -1; fs::remove(tmp_path); return; }
+            boost::system::error_code rename_error;
+            fs::rename(tmp_path, target_file_path, rename_error);
+            if (rename_error) { result = -1; fs::remove(tmp_path); return; }
             if (pro_fn) pro_fn(InstallStatusDownloadCompleted, 80, cancel);
             })
         .on_error([&pro_fn, &result, &err_msg](std::string body, std::string error, unsigned int status) {
@@ -1864,152 +1883,83 @@ int GUI_App::download_plugin(std::string name, std::string package_name, Install
 int GUI_App::install_plugin(std::string name, std::string package_name, InstallProgressFn pro_fn, WasCancelledFn cancel_fn)
 {
     bool cancel = false;
-    std::string target_file_path = (fs::temp_directory_path() / package_name).string();
-
-    BOOST_LOG_TRIVIAL(info) << "[install_plugin] enter";
-    // get plugin folder
-    std::string data_dir_str = data_dir();
-    boost::filesystem::path data_dir_path(data_dir_str);
-    auto plugin_folder = data_dir_path / name;
-    //auto plugin_folder = boost::filesystem::path(wxStandardPaths::Get().GetUserDataDir().ToUTF8().data()) / "plugins";
-    auto backup_folder = plugin_folder/"backup";
-    if (!boost::filesystem::exists(plugin_folder)) {
-        BOOST_LOG_TRIVIAL(info) << "[install_plugin] will create directory plugin under data dir";
-        boost::filesystem::create_directory(plugin_folder);
-    }
-    if (!boost::filesystem::exists(backup_folder)) {
-        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", will create directory backup under plugin dir");
-        boost::filesystem::create_directory(backup_folder);
-    }
-
-    if (m_networking_cancel_update) {
-        BOOST_LOG_TRIVIAL(info) << boost::format("[install_plugin]: %1%, cancelled by user")%__LINE__;
-        return -1;
-    }
-    if (pro_fn) {
-        pro_fn(InstallStatusNormal, 50, cancel);
-    }
-    // unzip
-    mz_zip_archive archive;
-    mz_zip_zero_struct(&archive);
-    if (!open_zip_reader(&archive, target_file_path)) {
-        BOOST_LOG_TRIVIAL(error) << boost::format("[install_plugin]: %1%, open zip file failed")%__LINE__;
-        if (pro_fn) pro_fn(InstallStatusDownloadFailed, 0, cancel);
+    if (name != "plugins" && name != "cameratools") return InstallStatusUnzipFailed;
+    const auto parent = std::filesystem::u8path(data_dir());
+    const auto plugin_folder = parent / name;
+    const auto staging = parent / fs::unique_path(".plugins-install-%%%%-%%%%-%%%%").string();
+    const auto previous = parent / fs::unique_path(".plugins-previous-%%%%-%%%%-%%%%").string();
+    struct Cleanup {
+        std::filesystem::path path;
+        ~Cleanup() { std::error_code ec; std::filesystem::remove_all(path, ec); }
+    } cleanup{staging};
+    try {
+        std::filesystem::create_directory(staging);
+        std::filesystem::permissions(staging, std::filesystem::perms::owner_all);
+        const auto canceled = [this, &cancel, &cancel_fn] {
+            return cancel || m_networking_cancel_update || (cancel_fn && cancel_fn());
+        };
+        if (canceled()) return -1;
+        if (pro_fn) pro_fn(InstallStatusNormal, 50, cancel);
+        std::string error;
+        const auto archive = std::filesystem::u8path(plugin_download_path(package_name).string());
+        const bool allow_unverified = AllowUnverifiedPluginsForDevelopment(
+            app_config && app_config->get_bool("ignore_module_cert"));
+        if (name == "cameratools" && !allow_unverified && !VerifyCameraToolsArchive(archive.u8string()))
+            throw std::runtime_error("Camera tools package does not match the reviewed release");
+        if (!extract_zip_safely(archive, staging, true, canceled, error))
+            throw std::runtime_error(error);
+        if (name == "plugins") {
+#if defined(_WIN32)
+            const auto main_module = staging / (std::string(BAMBU_NETWORK_LIBRARY) + ".dll");
+#elif defined(__APPLE__)
+            const auto main_module = staging / (std::string("lib") + BAMBU_NETWORK_LIBRARY + ".dylib");
+#else
+            const auto main_module = staging / (std::string("lib") + BAMBU_NETWORK_LIBRARY + ".so");
+#endif
+            if (!std::filesystem::is_regular_file(main_module))
+                throw std::runtime_error("Networking plugin archive is missing its entry library");
+        } else {
+#if defined(_WIN32)
+            const std::vector<std::string> helpers{"bambu_source.exe", "ffmpeg.exe"};
+#else
+            const std::vector<std::string> helpers{"bambu_source", "ffmpeg"};
+#endif
+            for (const auto& helper : helpers)
+                if (!std::filesystem::is_regular_file(staging / helper))
+                    throw std::runtime_error("Camera tools helper is missing");
+            if (!std::filesystem::is_regular_file(staging / "ffmpeg.cfg"))
+                throw std::runtime_error("Camera tools configuration is missing");
+        }
+        if (!allow_unverified && !(name == "plugins" ? VerifyPluginDirectory(staging.u8string()) :
+                                                      VerifyCameraToolsDirectory(staging.u8string())))
+            throw std::runtime_error("Plugin publisher or code signature could not be authenticated");
+        if (allow_unverified)
+            BOOST_LOG_TRIVIAL(warning) << "Development-only unsigned plugin installation explicitly enabled";
+        if (canceled()) return -1;
+        // Promote only a complete authenticated staging directory. Keep one
+        // previous installation for the existing startup fallback.
+        const bool had_previous = std::filesystem::exists(plugin_folder);
+        if (had_previous) std::filesystem::rename(plugin_folder, previous);
+        try {
+            std::filesystem::rename(staging, plugin_folder);
+        } catch (...) {
+            if (had_previous) std::filesystem::rename(previous, plugin_folder);
+            throw;
+        }
+        if (had_previous) {
+            std::error_code ec;
+            std::filesystem::remove_all(previous / "backup", ec);
+            std::filesystem::rename(previous, plugin_folder / "backup", ec);
+            if (ec) BOOST_LOG_TRIVIAL(warning) << "Previous plugin retained at " << previous.u8string();
+        }
+        if (pro_fn) pro_fn(InstallStatusInstallCompleted, 100, cancel);
+        if (app_config && name == "plugins") app_config->set_str("app", "installed_networking", "1");
+        return 0;
+    } catch (const std::exception& ex) {
+        BOOST_LOG_TRIVIAL(error) << "Plugin installation rejected: " << ex.what();
+        if (pro_fn) pro_fn(InstallStatusUnzipFailed, 0, cancel);
         return InstallStatusUnzipFailed;
     }
-
-    mz_uint num_entries = mz_zip_reader_get_num_files(&archive);
-    mz_zip_archive_file_stat stat;
-    BOOST_LOG_TRIVIAL(error) << boost::format("[install_plugin]: %1%, got %2% files")%__LINE__ %num_entries;
-    for (mz_uint i = 0; i < num_entries; i++) {
-        if (m_networking_cancel_update || cancel) {
-            BOOST_LOG_TRIVIAL(info) << boost::format("[install_plugin]: %1%, cancelled by user")%__LINE__;
-            return -1;
-        }
-        if (mz_zip_reader_file_stat(&archive, i, &stat)) {
-            if (stat.m_uncomp_size > 0) {
-                std::string dest_file;
-                if (stat.m_is_utf8) {
-                    dest_file = stat.m_filename;
-                }
-                else {
-                    std::string extra(1024, 0);
-                    size_t n = mz_zip_reader_get_extra(&archive, stat.m_file_index, extra.data(), extra.size());
-                    dest_file = decode(extra.substr(0, n), stat.m_filename);
-                }
-                auto dest_path = plugin_folder / dest_file;
-                boost::filesystem::create_directories(dest_path.parent_path());
-                std::string dest_zip_file = encode_path(dest_path.string().c_str());
-                try {
-                    if (fs::exists(dest_path))
-                        fs::remove(dest_path);
-                    mz_bool res = 0;
-#ifndef WIN32
-                    if (S_ISLNK(stat.m_external_attr >> 16)) {
-                        std::string link(stat.m_uncomp_size + 1, 0);
-                        res = mz_zip_reader_extract_to_mem(&archive, stat.m_file_index, link.data(), stat.m_uncomp_size, 0);
-                        try {
-                            boost::filesystem::create_symlink(link, dest_path);
-                        } catch (const std::exception &e) {
-                            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " create_symlink:" << e.what();
-                        }
-                    } else {
-#endif
-                        res = mz_zip_reader_extract_to_file(&archive, stat.m_file_index, dest_zip_file.c_str(), 0);
-#ifndef WIN32
-                    }
-#endif
-                    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", extract  %1% from plugin zip %2%\n") % dest_file % stat.m_filename;
-                    if (res == 0) {
-#ifdef WIN32
-                        std::wstring new_dest_zip_file = boost::locale::conv::utf_to_utf<wchar_t>(dest_path.generic_string());
-                        res                            = mz_zip_reader_extract_to_file_w(&archive, stat.m_file_index, new_dest_zip_file.c_str(), 0);
-#endif
-                        if (res == 0) {
-                            mz_zip_error zip_error = mz_zip_get_last_error(&archive);
-                            BOOST_LOG_TRIVIAL(error) << "[install_plugin]Archive read error:" << mz_zip_get_error_string(zip_error) << std::endl;
-                            close_zip_reader(&archive);
-                            if (pro_fn) { pro_fn(InstallStatusUnzipFailed, 0, cancel); }
-                            return InstallStatusUnzipFailed;
-                        }
-                    }
-                }
-                catch (const std::exception& e)
-                {
-                    // ensure the zip archive is closed and rethrow the exception
-                    close_zip_reader(&archive);
-                    BOOST_LOG_TRIVIAL(error) << "[install_plugin]Archive read exception:"<<e.what();
-                    if (pro_fn) {
-                        pro_fn(InstallStatusUnzipFailed, 0, cancel);
-                    }
-                    return InstallStatusUnzipFailed;
-                }
-            }
-        }
-        else {
-            BOOST_LOG_TRIVIAL(error) << boost::format("[install_plugin]: %1%, mz_zip_reader_file_stat for file %2% failed")%__LINE__%i;
-        }
-    }
-
-    close_zip_reader(&archive);
-    {
-        fs::path dir_path(plugin_folder);
-        if (fs::exists(dir_path) && fs::is_directory(dir_path)) {
-            int file_count = 0, file_index = 0;
-            for (fs::directory_iterator it(dir_path); it != fs::directory_iterator(); ++it) {
-                if (fs::is_regular_file(it->status())) { ++file_count; }
-            }
-            for (fs::directory_iterator it(dir_path); it != fs::directory_iterator(); ++it) {
-                BOOST_LOG_TRIVIAL(trace) << " current path:" << PathSanitizer::sanitize(it->path().string());
-                if (it->path().string() == backup_folder) {
-                    continue;
-                }
-                auto dest_path = backup_folder.string() + "/" + it->path().filename().string();
-                if (fs::is_regular_file(it->status())) {
-                    BOOST_LOG_TRIVIAL(trace) << " copy file:" << PathSanitizer::sanitize(it->path().string()) << "," << it->path().filename();
-                    try {
-                        if (pro_fn) { pro_fn(InstallStatusNormal, 50 + file_index / file_count, cancel); }
-                        file_index++;
-                        if (fs::exists(dest_path)) { fs::remove(dest_path); }
-                        std::string    error_message;
-                        CopyFileResult cfr = copy_file(it->path().string(), dest_path, error_message, false);
-                        if (cfr != CopyFileResult::SUCCESS) { BOOST_LOG_TRIVIAL(error) << "Copying to backup failed(" << cfr << "): " << error_message; }
-                    } catch (const std::exception &e) {
-                        BOOST_LOG_TRIVIAL(error) << "Copying to backup failed: " << e.what();
-                    }
-                } else {
-                    BOOST_LOG_TRIVIAL(trace) << " copy framework:" << it->path().string() << "," << it->path().filename();
-                    copy_framework(it->path().string(), dest_path);
-                }
-            }
-        }
-    }
-    if (pro_fn)
-        pro_fn(InstallStatusInstallCompleted, 100, cancel);
-    if (name == "plugins")
-        app_config->set_str("app", "installed_networking", "1");
-    BOOST_LOG_TRIVIAL(info) << "[install_plugin] success";
-    return 0;
 }
 
 void GUI_App::restart_networking()
@@ -2921,6 +2871,8 @@ bool GUI_App::OnInit()
 
 int GUI_App::OnExit()
 {
+    set_closing(true);
+    stop_http_server(); // join login requests before destroying NetworkAgent
 #ifdef __APPLE__
     UnRegisterMacPowerCallBack();
 #endif
@@ -2934,6 +2886,8 @@ int GUI_App::OnExit()
     // network library's 10s timeout).
     if (m_check_cert_thread.joinable())
         m_check_cert_thread.join();
+
+    if (m_fila_manager_cloud_client) m_fila_manager_cloud_client->shutdown();
 
     if (m_fila_manager_cloud_disp) {
         delete m_fila_manager_cloud_disp;
@@ -4769,40 +4723,7 @@ void GUI_App::load_gcode(wxWindow* parent, wxString& input_file) const
 
 wxString GUI_App::transition_tridid(int trid_id, std::optional<int> total_extruder_count) const
 {
-    if (trid_id == VIRTUAL_TRAY_MAIN_ID || trid_id == VIRTUAL_TRAY_DEPUTY_ID) {
-        if (total_extruder_count.value_or(-1) == 2) {
-            if (trid_id == VIRTUAL_TRAY_MAIN_ID) {
-                return wxString("Ext-R");
-            } else {
-                return wxString("Ext-L");
-            }
-        }
-        return wxString("Ext");
-    }
-
-    wxString maping_dict[] = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z" };
-
-    if (trid_id >= 128 * 4) {
-        trid_id -= 128 * 4;
-        int id_index = trid_id / 4;
-        return wxString::Format("%s", maping_dict[id_index]);
-    }
-    else if (trid_id >= 0x80 && trid_id <= 0x87) { // n3s
-        const char base = 'A' + (trid_id - 128);
-        wxString prefix("HT-");
-        prefix.append(base);
-        return prefix;
-    }
-    else if (trid_id >= 24 && trid_id <= 27 )
-    {
-        int id_suffix = trid_id - 24 + 1;//ams lite for n9 trid_id start from 24
-        return wxString::Format("Q%d", id_suffix);
-    }
-    else {
-        int id_index = std::clamp((int)ceil(trid_id / 4), 0, 25);
-        int id_suffix = trid_id % 4 + 1;
-        return wxString::Format("%s%d", maping_dict[id_index], id_suffix);
-    }
+    return wxString::FromUTF8(format_tray_label(trid_id, total_extruder_count).c_str());
 }
 
 //BBS
@@ -4825,6 +4746,7 @@ void GUI_App::get_login_info()
         }
         else {
             m_homepage_server_connect_failed = false;
+            reset_filament_session();
             m_agent->user_logout();
             std::string logout_cmd = m_agent->build_logout_cmd();
             wxString strJS = wxString::Format("window.postMessage(%s)", logout_cmd);
@@ -4881,6 +4803,15 @@ void GUI_App::request_user_login(int online_login)
     wxQueueEvent(this, evt);
 }
 
+void GUI_App::reset_filament_session()
+{
+    if (m_fila_manager_cloud_client) m_fila_manager_cloud_client->reset_session();
+    if (m_fila_manager_cloud_sync) m_fila_manager_cloud_sync->reset_session();
+    if (m_fila_manager_cloud_disp) m_fila_manager_cloud_disp->reset_session();
+    if (m_fila_manager_sync) m_fila_manager_sync->reset_session();
+    if (m_fila_manager_store) m_fila_manager_store->clear();
+}
+
 void GUI_App::request_user_logout()
 {
     m_homepage_server_connect_failed = false;
@@ -4890,6 +4821,7 @@ void GUI_App::request_user_logout()
         m_load_last_machine.is_list_ok = false;
         m_load_last_machine.is_mqtt_ok = false;
         // Update data first before showing dialogs
+        reset_filament_session();
         m_agent->user_logout(true);
         WebView::ClearBambulabTokenCookies();
         if (auto obj = m_device_manager->get_selected_machine();
@@ -5340,6 +5272,7 @@ void GUI_App::handle_script_message(std::string msg)
             wxString cmd = j["command"];
             if (cmd == "user_login") {
                 if (m_agent) {
+                    reset_filament_session();
                     m_agent->change_user(j.dump());
                     if (m_agent->is_user_login()) {
                         request_user_login(1);
@@ -5350,6 +5283,7 @@ void GUI_App::handle_script_message(std::string msg)
                 std::string ticket = j["data"]["ticket"];
                 TicketLoginTask::perform_async(ticket, [this](std::string login_info) {
                     if (m_agent && !login_info.empty()) {
+                        reset_filament_session();
                         m_agent->change_user(login_info);
                         if (m_agent->is_user_login()) { request_user_login(1); }
                     }
@@ -6164,6 +6098,7 @@ void GUI_App::show_check_privacy_dlg(wxCommandEvent& evt)
             app_config->save();
             report_consent_common(false, "studio_privacy_policy_enable", "SoftwarePrivacy");
             if (m_agent) {
+                reset_filament_session();
                 m_agent->user_logout();
             }
         });

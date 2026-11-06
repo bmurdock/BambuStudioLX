@@ -1,4 +1,5 @@
 #include "StatusPanel.hpp"
+#include <wx/weakref.h>
 
 #include <algorithm>
 
@@ -5506,7 +5507,8 @@ void StatusPanel::show_new_official_filament_dlg(
             const int hit_id  = m_new_official_filament_dlg->GetHitSpoolId();
             const int cand_id = m_new_official_filament_dlg->GetSelectedCandidateId();
             if (hit_id > 0) {
-                wgtFilaManagerCloudClient client;
+                auto* client = wxGetApp().fila_manager_cloud_client();
+                if (!client) return;
                 BBL::SoftMatchPendingActionParams p;
                 p.spoolId = hit_id;
                 if (cand_id > 0 && cand_id != hit_id) {
@@ -5518,7 +5520,7 @@ void StatusPanel::show_new_official_filament_dlg(
                     p.action = "accept";
                 }
                 const std::string action = p.action;
-                client.post_soft_match_pending(p,
+                client->post_soft_match_pending(p,
                     [action](const nlohmann::json&) {
                         BOOST_LOG_TRIVIAL(info)
                             << "[soft_match_pending] " << action << " success";
@@ -5533,12 +5535,13 @@ void StatusPanel::show_new_official_filament_dlg(
         if (choice == AMSNewOfficialFilamentDlg::Choice::RecordNew) {
             const int hit_id = m_new_official_filament_dlg->GetHitSpoolId();
             if (hit_id > 0) {
-                wgtFilaManagerCloudClient client;
+                auto* client = wxGetApp().fila_manager_cloud_client();
+                if (!client) return;
                 BBL::SoftMatchPendingActionParams p;
                 p.action  = "create_new";
                 p.spoolId = hit_id;
                 // targetSpoolId 保持默认 0，不传
-                client.post_soft_match_pending(p,
+                client->post_soft_match_pending(p,
                     [](const nlohmann::json&) {
                         BOOST_LOG_TRIVIAL(info) << "[soft_match_pending] create_new success";
                     },
@@ -5582,12 +5585,14 @@ void StatusPanel::open_new_official_filament_hint(const std::string& ams_id, con
             ams_sn = ver_it->second.sn;
     }
 
-    wgtFilaManagerCloudClient client;
+    auto* client = wxGetApp().fila_manager_cloud_client();
+    if (!client) return;
     BBL::SoftMatchPendingParams p;
     p.devId = obj->get_dev_id();
     p.amsSn = ams_sn;
-    client.get_soft_match_pending(p,
-        [this, dev_id, ams_id, slot_id](const nlohmann::json& data) {
+    client->get_soft_match_pending(p,
+        [this, owner = wxWeakRef<StatusPanel>(this), dev_id, ams_id, slot_id](const nlohmann::json& data) {
+            if (!owner) return;
             m_soft_match_pending = SoftMatchPendingResponse::from_json(data);
             BOOST_LOG_TRIVIAL(info)
                 << "[soft_match_pending] parsed: hits=" << m_soft_match_pending.hits.size()
@@ -5630,6 +5635,7 @@ void StatusPanel::open_new_official_filament_hint(const std::string& ams_id, con
                 }
                 AMSNewFilamentRecordedDlg dlg(this, display_sp);
                 dlg.ShowModal();
+                if (!owner) return;
                 dismiss_filament_hint_ui(dev_id, ams_id, slot_id);
             } else {
                 // 情况二/三：有待匹配条目，让用户选择处理方式
@@ -5637,7 +5643,8 @@ void StatusPanel::open_new_official_filament_hint(const std::string& ams_id, con
                 show_new_official_filament_dlg(dev_id, ams_id, slot_id);
             }
         },
-        [this, dev_id, ams_id, slot_id](int code, const std::string& err) {
+        [this, owner = wxWeakRef<StatusPanel>(this), dev_id, ams_id, slot_id](int code, const std::string& err) {
+            if (!owner) return;
             BOOST_LOG_TRIVIAL(warning)
                 << "[soft_match_pending] GET failed code=" << code << " err=" << err;
             show_new_official_filament_dlg(dev_id, ams_id, slot_id);

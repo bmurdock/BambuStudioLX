@@ -29,6 +29,17 @@ namespace Slic3r {
         }
     };
 
+    // Explicit opt-in is limited to non-public Linux Debug builds.
+    bool AllowUnverifiedPluginsForDevelopment(bool explicitly_enabled);
+    // Fail closed if the platform cannot authenticate this plugin publisher.
+    bool VerifyPluginFile(const std::string& path_utf8);
+    bool VerifyPluginDirectory(const std::string& path_utf8);
+    // Apply only to a signer obtained after successful WinVerifyTrust validation.
+    bool IsTrustedWindowsPluginPublisher(const SignerSummary& signer, std::string filename);
+    // Camera tools lack publisher signatures. Only reviewed, pinned bytes are trusted.
+    bool VerifyCameraToolsArchive(const std::string& path_utf8);
+    bool VerifyCameraToolsDirectory(const std::string& path_utf8);
+
     bool IsSamePublisher(const SignerSummary& a, const SignerSummary& b);
 
     std::optional<SignerSummary> SummarizeSelf();

@@ -2,6 +2,7 @@
 #define slic3r_GUI_App_hpp_
 
 #include <functional>
+#include <atomic>
 #include <memory>
 #include <string>
 #include "ImGuiWrapper.hpp"
@@ -351,7 +352,7 @@ private:
     std::vector<bool> m_create_preset_blocked { false, false, false, false, false, false }; // excceed limit
     bool m_networking_compatible { false };
     bool m_networking_need_update { false };
-    bool m_networking_cancel_update { false };
+    std::atomic<bool> m_networking_cancel_update { false };
     std::shared_ptr<UpgradeNetworkJob> m_upgrade_network_job;
 
     // login widget
@@ -405,6 +406,7 @@ public:
     Slic3r::DeviceManager* getDeviceManager() { return m_device_manager; }
     bool                   is_blocking_printing(MachineObject *obj_ = nullptr);
     Slic3r::TaskManager*   getTaskManager() { return m_task_manager; }
+    void reset_filament_session();
     wgtFilaManagerStore*            fila_manager_store()        { return m_fila_manager_store; }
     wgtFilaManagerSync*             fila_manager_sync()         { return m_fila_manager_sync; }
     wgtFilaManagerCloudClient*      fila_manager_cloud_client() { return m_fila_manager_cloud_client; }

@@ -14,6 +14,9 @@ add_executable(${_TEST_NAME}_tests
 	test_mutable_polygon.cpp
 	test_mutable_priority_queue.cpp
 	test_stl.cpp
+    test_safe_archive_path.cpp
+    test_safe_zip_extraction.cpp
+	test_expat_security.cpp
 	test_meshboolean.cpp
 	test_marchingsquares.cpp
 	test_timeutils.cpp

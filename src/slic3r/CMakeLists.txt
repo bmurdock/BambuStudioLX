@@ -637,14 +637,10 @@ set(SLIC3R_GUI_SOURCES
     Utils/WxFontUtils.hpp
     Utils/EmbossStyleManager.cpp
     Utils/EmbossStyleManager.hpp
-    Utils/Http.cpp
-    Utils/Http.hpp
     Utils/FixModelByWin10.cpp
     Utils/FixModelByWin10.hpp
     Utils/Bonjour.cpp
     Utils/Bonjour.hpp
-    Utils/BBLUtil.hpp
-    Utils/BBLUtil.cpp
     Utils/FileHelp.cpp
     Utils/FileHelp.hpp
     Utils/PresetUpdater.cpp
@@ -766,6 +762,16 @@ endif ()
 
 add_library(libslic3r_gui STATIC ${SLIC3R_GUI_SOURCES})
 
+# Public GUI utility headers expose wx types. Directory-scoped UsewxWidgets
+# settings do not reach consumers such as tests/ outside src/.
+target_include_directories(libslic3r_gui SYSTEM INTERFACE ${wxWidgets_INCLUDE_DIRS})
+target_compile_definitions(libslic3r_gui INTERFACE ${wxWidgets_DEFINITIONS}
+    "$<$<CONFIG:Debug>:${wxWidgets_DEFINITIONS_DEBUG}>")
+if (wxWidgets_CXX_FLAGS)
+    separate_arguments(_wx_interface_flags NATIVE_COMMAND "${wxWidgets_CXX_FLAGS}")
+    target_compile_options(libslic3r_gui INTERFACE ${_wx_interface_flags})
+endif()
+
 if (TARGET device_page_build)
     add_dependencies(libslic3r_gui device_page_build)
 endif()
@@ -830,10 +836,6 @@ if (SLIC3R_STATIC)
     # cmake build forgets this and the build fails in debug mode (or on raspberry release)
     target_compile_definitions(libslic3r_gui PUBLIC -DwxDEBUG_LEVEL=0)
 endif()
-
-if (SLIC3R_STATIC AND NOT SLIC3R_STATIC_EXCLUDE_CURL AND UNIX AND NOT APPLE)
-    target_compile_definitions(libslic3r_gui PRIVATE OPENSSL_CERT_OVERRIDE)
-endif ()
 
 if (SLIC3R_PCH AND NOT SLIC3R_SYNTAXONLY)
     add_precompiled_header(libslic3r_gui pchheader.hpp FORCEINCLUDE)

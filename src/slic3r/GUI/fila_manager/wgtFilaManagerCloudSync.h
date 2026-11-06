@@ -8,6 +8,7 @@
 #include "nlohmann/json.hpp"
 
 #include "AmsAutoPushThrottle.h"
+#include "CloudInventorySnapshot.h"
 #include "wgtFilaManagerStore.h"
 
 namespace Slic3r { namespace GUI {
@@ -28,7 +29,8 @@ public:
     wgtFilaManagerCloudSync(wgtFilaManagerStore* store, wgtFilaManagerCloudClient* client);
     ~wgtFilaManagerCloudSync() = default;
 
-    void pull_from_cloud();
+    void pull_from_cloud(std::function<void()> on_done = {});
+    void reset_session();
     void push_spool_to_cloud(const std::string& spool_id);
     void push_update_to_cloud(const std::string& spool_id, const nlohmann::json& local_patch);
     void push_delete_to_cloud(const std::vector<std::string>& spool_ids);
@@ -64,6 +66,10 @@ public:
     static FilamentSpool cloud_json_to_spool(const nlohmann::json& j);
 
 private:
+    void request_pull_page();
+    void finish_pull(int code = 0, const std::string& error = {});
+    CloudInventorySnapshot m_pull_snapshot;
+    std::function<void()> m_pull_done;
     wgtFilaManagerStore*       m_store;
     wgtFilaManagerCloudClient* m_client;
     bool                       m_syncing = false;

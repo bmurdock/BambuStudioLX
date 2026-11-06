@@ -146,14 +146,13 @@ void wgtFilaManagerSync::check_and_register_new_rfid_spools(MachineObject* obj)
             params.items.push_back(std::move(sync_item));
             m_pending_badges[obj->get_dev_id() + ":" + ams_id_key + ":" + slot_id_key] = uuid;
 
-            wgtFilaManagerCloudClient client;
-            client.sync_ams(std::move(params),
+            auto* client = wxGetApp().fila_manager_cloud_client();
+            if (!client) continue;
+            client->sync_ams(std::move(params),
                 [this, uuid](const nlohmann::json&) {
-                    wxGetApp().CallAfter([this, uuid]() {
-                        m_auto_added_rfid_uuids.erase(uuid);
-                        if (auto* d = wxGetApp().fila_manager_cloud_disp())
-                            d->enqueue_pull();
-                    });
+                    m_auto_added_rfid_uuids.erase(uuid);
+                    if (auto* d = wxGetApp().fila_manager_cloud_disp())
+                        d->enqueue_pull();
                 },
                 [uuid](int code, const std::string& err) {
                     BOOST_LOG_TRIVIAL(warning)

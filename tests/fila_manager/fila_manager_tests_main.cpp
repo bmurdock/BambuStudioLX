@@ -10,8 +10,34 @@
 #include <catch_main.hpp>
 
 #include "slic3r/GUI/fila_manager/wgtFilaManagerStore.h"
+#include "slic3r/GUI/DeviceCore/TrayLabel.hpp"
+#include <limits>
 
 using namespace Slic3r::GUI;
+
+TEST_CASE("Inventory tray labels do not require a GUI and reject invalid identifiers", "[fila_manager][tray_label]")
+{
+    FilamentSpool spool;
+    spool.slot_id = "0";
+    for (const auto& item : std::vector<std::pair<int, std::string>>{
+             {0, "A1"}, {6, "Q1"}, {32, "HT-A"}, {128, "A"}, {153, "Z"},
+             {154, ""}, {std::numeric_limits<int>::max(), ""}, {255, "Ext"}, {254, "Ext"}}) {
+        spool.ams_id = item.first;
+        REQUIRE(spool.to_json().at("tray_label") == item.second);
+    }
+    spool.ams_id = 0;
+    for (const std::string slot : {"4", "-1", "1tail", "999999999999999999999"}) {
+        spool.slot_id = slot;
+        REQUIRE(spool.to_json().at("tray_label") == "");
+    }
+    REQUIRE(format_tray_label(-1).empty());
+    REQUIRE(format_tray_label(std::numeric_limits<int>::max()).empty());
+    REQUIRE(format_tray_label(255, 2) == "Ext-R");
+    REQUIRE(format_tray_label(254, 2) == "Ext-L");
+    REQUIRE(format_tray_label(27) == "Q4");
+    REQUIRE(format_tray_label(135) == "HT-H");
+    REQUIRE(format_tray_label(615) == "Z");
+}
 
 // Smoke test: keep at least one TEST_CASE so the binary is non-empty even
 // before STUDIO-17977 Task 1 lands its [colors] cases. Verifies that the

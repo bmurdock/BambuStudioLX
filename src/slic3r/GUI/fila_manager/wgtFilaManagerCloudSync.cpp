@@ -19,24 +19,6 @@ namespace Slic3r { namespace GUI {
 
 namespace {
 
-nlohmann::json extract_cloud_list(const nlohmann::json& data)
-{
-    if (data.contains("hits") && data["hits"].is_array())
-        return data["hits"];
-    if (data.is_array())
-        return data;
-    if (data.contains("data")) {
-        const auto& d = data["data"];
-        if (d.is_array())
-            return d;
-        if (d.is_object() && d.contains("hits") && d["hits"].is_array())
-            return d["hits"];
-    }
-    if (data.contains("filaments") && data["filaments"].is_array())
-        return data["filaments"];
-    return nlohmann::json::array();
-}
-
 // Cloud error callbacks hand us the raw HTTP response body in `err` (see
 // wgtFilaManagerCloudClient: `response_body.empty() ? "network request failed"
 // : response_body`). That body can carry user-scoped or server-internal
@@ -349,13 +331,15 @@ nlohmann::json wgtFilaManagerCloudSync::spool_to_cloud_json(const FilamentSpool&
 // Pull: cloud → local
 // ---------------------------------------------------------------------------
 
-void wgtFilaManagerCloudSync::pull_from_cloud()
+void wgtFilaManagerCloudSync::pull_from_cloud(std::function<void()> on_done)
 {
-    if (m_syncing) return;
+    if (m_syncing) { if (on_done) on_done(); return; }
 
     NetworkAgent* agent = wxGetApp().getAgent();
-    if (!agent || !agent->is_user_login()) return;
+    if (!agent || !agent->is_user_login()) { if (on_done) on_done(); return; }
 
+    m_pull_done = std::move(on_done);
+    m_pull_snapshot = CloudInventorySnapshot{};
     m_syncing = true;
     m_last_pull_succeeded = false;
     m_last_pull_error_code = 0;
@@ -365,104 +349,122 @@ void wgtFilaManagerCloudSync::pull_from_cloud()
                                    "Starting pull_from_cloud merge",
                                    nlohmann::json::object());
 
-    m_client->list_spools({},
+    request_pull_page();
+}
+
+void wgtFilaManagerCloudSync::reset_session()
+{
+    m_syncing = false;
+    m_last_pull_succeeded = false;
+    m_last_pull_error_code = 0;
+    m_last_pull_error_message.clear();
+    m_pull_done = {};
+    m_pull_snapshot = CloudInventorySnapshot{};
+    m_throttle.clear_all();
+}
+
+void wgtFilaManagerCloudSync::finish_pull(int code, const std::string& error)
+{
+    m_last_pull_succeeded = code == 0;
+    m_last_pull_error_code = code;
+    m_last_pull_error_message = error;
+    m_syncing = false;
+    auto done = std::move(m_pull_done);
+    m_pull_done = {};
+    if (done) done();
+}
+
+void wgtFilaManagerCloudSync::request_pull_page()
+{
+    m_client->list_spools({{"offset", std::to_string(m_pull_snapshot.offset())},
+                           {"limit", std::to_string(CloudInventorySnapshot::page_size)}},
         [this](const nlohmann::json& data) {
-            wxTheApp->CallAfter([this, data]() {
-                try {
-                    // Cloud ListFilamentV2Resp returns { total, hits: [...] }
-                    // at the root; tolerate a few alternative shapes for
-                    // forward/backward compatibility.
-                    nlohmann::json list = extract_cloud_list(data);
-
-                    // Cloud is the source of truth: collect every cloud id we
-                    // are about to keep, then rewrite the local store to match
-                    // exactly that set. Local-only entries (e.g. pushes that
-                    // never succeeded) are dropped on purpose so a pull always
-                    // leaves the local list in sync with the latest cloud
-                    // snapshot.
-                    std::set<std::string> cloud_ids;
-                    int dropped_local_only = 0;
-
-                    // 判断某台机器当前是否在线（有实时 MQTT 数据）。
-                    // 用 get_my_machine 而非 get_user_machine，避免跨账号误判。
-                    auto machine_is_online = [](const std::string& dev_id) -> bool {
-                        if (dev_id.empty()) return false;
-                        auto* mgr = wxGetApp().getDeviceManager();
-                        if (!mgr) return false;
-                        MachineObject* obj = mgr->get_my_machine(dev_id);
-                        return obj && obj->is_online();
-                    };
-
-                    for (const auto& item : list) {
-                        FilamentSpool cloud_spool = cloud_json_to_spool(item);
-                        if (cloud_spool.spool_id.empty()) continue;
-                        cloud_spool.cloud_synced = true;
-                        cloud_ids.insert(cloud_spool.spool_id);
-
-                        if (const FilamentSpool* existing = m_store->get_spool(cloud_spool.spool_id)) {
-                            // 判断本地是否有来自该机器的实时 MQTT 数据。
-                            // 条件：existing->dev_id 对应的机器当前在线。
-                            // 不单独判断 in_printer==true，因为断连后该值仍可能为 true。
-                            const bool local_is_live = machine_is_online(existing->dev_id);
-                            if (local_is_live) {
-                                // 机器在线时以本地为准，保留本地在位字段，不用云端值覆盖。
-                                // 不在 pull 里反向 push 修正——下次 MQTT 到来时
-                                // notify_ams_synced 会把最新在位字段推上云端。
-                                cloud_spool.in_printer  = existing->in_printer;
-                                cloud_spool.dev_id      = existing->dev_id;
-                                cloud_spool.ams_sn      = existing->ams_sn;
-                                cloud_spool.ams_id      = existing->ams_id;
-                                cloud_spool.ams_type    = existing->ams_type;
-                                cloud_spool.slot_id     = existing->slot_id;
-                                cloud_spool.device_name = existing->device_name;
-                            }
-                            // local_is_live==false：云端在位字段直接作为历史数据落地
-                            m_store->update_spool(cloud_spool);
-                        } else {
-                            m_store->add_spool(cloud_spool);
-                        }
-                    }
-
-                    for (const auto& existing : m_store->spools_to_json()) {
-                        const std::string existing_id = existing.value("spool_id", "");
-                        if (existing_id.empty()) continue;
-                        if (cloud_ids.count(existing_id) == 0) {
-                            m_store->remove_spool(existing_id);
-                            ++dropped_local_only;
-                        }
-                    }
-
-                    m_last_pull_succeeded = true;
-                    BOOST_LOG_TRIVIAL(info) << "[FilaCloudSync] pull_from_cloud completed, "
-                                            << list.size() << " items kept, "
-                                            << dropped_local_only << " local-only entries dropped";
-                    wxGetApp().emit_fila_debug_log("data", "info", "Cloud pull merged",
-                                                   "Cloud pull overwrote local store",
-                                                   {{"count", static_cast<int>(list.size())},
-                                                    {"dropped_local_only", dropped_local_only}});
-                } catch (const std::exception& e) {
-                    m_last_pull_succeeded = false;
-                    m_last_pull_error_code = -1;
-                    m_last_pull_error_message = e.what();
-                    BOOST_LOG_TRIVIAL(error) << "[FilaCloudSync] pull_from_cloud merge error: " << e.what();
-                    wxGetApp().emit_fila_debug_log("data", "error", "Cloud pull merge error",
-                                                   "Merging cloud pull result into local store failed",
-                                                   {{"error", e.what()}});
+            try {
+                if (!m_pull_snapshot.append(data)) {
+                    request_pull_page();
+                    return;
                 }
-                m_syncing = false;
-            });
+                const auto& list = m_pull_snapshot.items();
+                // Conversion must also succeed before mutating the store.
+                std::vector<FilamentSpool> converted;
+                converted.reserve(list.size());
+                for (const auto& item : list) converted.push_back(cloud_json_to_spool(item));
+
+                // Cloud is the source of truth: collect every cloud id we
+                // are about to keep, then rewrite the local store to match
+                // exactly that set. Local-only entries (e.g. pushes that
+                // never succeeded) are dropped on purpose so a pull always
+                // leaves the local list in sync with the latest cloud
+                // snapshot.
+                std::set<std::string> cloud_ids;
+                int dropped_local_only = 0;
+
+                // 判断某台机器当前是否在线（有实时 MQTT 数据）。
+                // 用 get_my_machine 而非 get_user_machine，避免跨账号误判。
+                auto machine_is_online = [](const std::string& dev_id) -> bool {
+                    if (dev_id.empty()) return false;
+                    auto* mgr = wxGetApp().getDeviceManager();
+                    if (!mgr) return false;
+                    MachineObject* obj = mgr->get_my_machine(dev_id);
+                    return obj && obj->is_online();
+                };
+
+                for (auto& cloud_spool : converted) {
+                    if (cloud_spool.spool_id.empty()) continue;
+                    cloud_spool.cloud_synced = true;
+                    cloud_ids.insert(cloud_spool.spool_id);
+
+                    if (const FilamentSpool* existing = m_store->get_spool(cloud_spool.spool_id)) {
+                        // 判断本地是否有来自该机器的实时 MQTT 数据。
+                        // 条件：existing->dev_id 对应的机器当前在线。
+                        // 不单独判断 in_printer==true，因为断连后该值仍可能为 true。
+                        const bool local_is_live = machine_is_online(existing->dev_id);
+                        if (local_is_live) {
+                            // 机器在线时以本地为准，保留本地在位字段，不用云端值覆盖。
+                            // 不在 pull 里反向 push 修正——下次 MQTT 到来时
+                            // notify_ams_synced 会把最新在位字段推上云端。
+                            cloud_spool.in_printer  = existing->in_printer;
+                            cloud_spool.dev_id      = existing->dev_id;
+                            cloud_spool.ams_sn      = existing->ams_sn;
+                            cloud_spool.ams_id      = existing->ams_id;
+                            cloud_spool.ams_type    = existing->ams_type;
+                            cloud_spool.slot_id     = existing->slot_id;
+                            cloud_spool.device_name = existing->device_name;
+                        }
+                        // local_is_live==false：云端在位字段直接作为历史数据落地
+                        m_store->update_spool(cloud_spool);
+                    } else {
+                        m_store->add_spool(cloud_spool);
+                    }
+                }
+
+                for (const auto& existing : m_store->spools_to_json()) {
+                    const std::string existing_id = existing.value("spool_id", "");
+                    if (existing_id.empty()) continue;
+                    if (cloud_ids.count(existing_id) == 0) {
+                        m_store->remove_spool(existing_id);
+                        ++dropped_local_only;
+                    }
+                }
+
+                m_last_pull_succeeded = true;
+                BOOST_LOG_TRIVIAL(info) << "[FilaCloudSync] pull_from_cloud completed, "
+                                        << list.size() << " items kept, "
+                                        << dropped_local_only << " local-only entries dropped";
+                wxGetApp().emit_fila_debug_log("data", "info", "Cloud pull merged",
+                                               "Cloud pull overwrote local store",
+                                               {{"count", static_cast<int>(list.size())},
+                                                {"dropped_local_only", dropped_local_only}});
+            } catch (const std::exception& e) {
+                BOOST_LOG_TRIVIAL(error) << "[FilaCloudSync] pull merge failed: " << e.what();
+                finish_pull(-1, e.what());
+                return;
+            }
+            finish_pull();
         },
-        [this](int code, const std::string& err) {
-            wxTheApp->CallAfter([this, code, err]() {
-                m_last_pull_succeeded = false;
-                m_last_pull_error_code = code;
-                m_last_pull_error_message = err;
-                BOOST_LOG_TRIVIAL(error) << "[FilaCloudSync] pull_from_cloud failed: " << code << err_body_tail(err);
-                wxGetApp().emit_fila_debug_log("http", "error", "Cloud pull failed",
-                                               "list_spools failed during pull_from_cloud",
-                                               {{"code", code}, {"error", err}});
-                m_syncing = false;
-            });
+        [this](int code, const std::string& error) {
+            BOOST_LOG_TRIVIAL(error) << "[FilaCloudSync] pull failed: " << code << err_body_tail(error);
+            finish_pull(code == 0 ? -1 : code, error);
         });
 }
 
@@ -966,9 +968,7 @@ void wgtFilaManagerCloudSync::fetch_filament_config(
                                    nlohmann::json::object());
     m_client->get_filament_config(
         [on_done](const nlohmann::json& data) {
-            wxTheApp->CallAfter([on_done, data]() {
-                if (on_done) on_done(data);
-            });
+            if (on_done) on_done(data);
         },
         [](int code, const std::string& err) {
             BOOST_LOG_TRIVIAL(error) << "[FilaCloudSync] fetch_filament_config failed: " << code << err_body_tail(err);

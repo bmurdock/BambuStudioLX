@@ -5,6 +5,7 @@
 #include "slic3r/GUI/DeviceWeb/IViewModel.hpp"
 #include <nlohmann/json.hpp>
 #include <string>
+#include <memory>
 
 namespace Slic3r { namespace GUI {
 
@@ -26,6 +27,7 @@ public:
     void OnSysColorChanged() override;
 
 private:
+    std::shared_ptr<int> m_lifetime = std::make_shared<int>(0);
     nlohmann::json MakeResp(const std::string& submod, const std::string& action,
         int code, const std::string& msg = "",
         const nlohmann::json& payload = nlohmann::json::object());

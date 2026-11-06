@@ -131,6 +131,8 @@ public:
 
     void load();
     void save();
+    std::size_t size() const { return m_spools.size(); }
+    void clear() { m_spools.clear(); m_dirty = false; }
 
     std::string add_spool(const FilamentSpool& spool);
     void update_spool(const FilamentSpool& spool);

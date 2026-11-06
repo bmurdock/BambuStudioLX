@@ -1,22 +1,36 @@
 #include "DeviceHttpServer.hpp"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <sstream>
 #include <unordered_map>
+#include <vector>
 
 #include <boost/asio/read.hpp>
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/write.hpp>
 #include <boost/asio/streambuf.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/asio/post.hpp>
 #include <boost/beast/core/error.hpp>
 #include <boost/log/trivial.hpp>
 
 #include "libslic3r/Utils.hpp"
 
 namespace Slic3r { namespace GUI {
+
+namespace {
+constexpr std::size_t MAX_REQUEST_LINE_BYTES = 8 * 1024;
+constexpr std::size_t MAX_HEADER_LINE_BYTES = 8 * 1024;
+constexpr std::size_t MAX_HEADERS_BYTES      = 64 * 1024;
+constexpr std::size_t MAX_CONNECTIONS        = 32;
+constexpr auto READ_TIMEOUT                  = std::chrono::seconds(10);
+constexpr auto WRITE_TIMEOUT                 = std::chrono::seconds(10);
+}
 
 // ---------------------------------------------------------------------------
 // HTTP helpers (file-local)
@@ -130,19 +144,57 @@ public:
 class DeviceSession : public std::enable_shared_from_this<DeviceSession>
 {
     boost::asio::ip::tcp::socket socket_;
-    boost::asio::streambuf       buff_;
+    boost::asio::streambuf       buff_{MAX_HEADERS_BYTES};
+    boost::asio::steady_timer    timer_;
     DeviceHttpHeaders            headers_;
+    std::function<void(DeviceSession *)> on_done_;
+    std::size_t                   header_bytes_{0};
+    bool                          finished_{false};
+
+    void finish()
+    {
+        if (finished_)
+            return;
+        finished_ = true;
+        boost::system::error_code ec;
+        timer_.cancel();
+        socket_.cancel(ec);
+        socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+        socket_.close(ec);
+        if (on_done_)
+            on_done_(this);
+    }
+
+    void arm_timeout(std::chrono::steady_clock::duration timeout)
+    {
+        auto self = shared_from_this();
+        timer_.expires_after(timeout);
+        timer_.async_wait([self](const boost::system::error_code &ec) {
+            if (!ec)
+                self->finish();
+        });
+    }
+
+    void cancel_timeout()
+    {
+        timer_.cancel();
+    }
 
     void read_first_line()
     {
         auto self = shared_from_this();
-        boost::asio::async_read_until(socket_, buff_, '\r',
-            [self](const boost::system::error_code &ec, std::size_t) {
-                if (ec) return;
+        arm_timeout(READ_TIMEOUT);
+        boost::asio::async_read_until(socket_, buff_, "\r\n",
+            [self](const boost::system::error_code &ec, std::size_t bytes) {
+                if (ec || bytes > MAX_REQUEST_LINE_BYTES) {
+                    self->finish();
+                    return;
+                }
                 std::istream stream{&self->buff_};
                 std::string line, ignore;
                 std::getline(stream, line, '\r');
                 std::getline(stream, ignore, '\n');
+                self->header_bytes_ = bytes;
                 self->headers_.on_read_request_line(line);
                 self->read_next_line();
             });
@@ -151,13 +203,21 @@ class DeviceSession : public std::enable_shared_from_this<DeviceSession>
     void read_next_line()
     {
         auto self = shared_from_this();
-        boost::asio::async_read_until(socket_, buff_, '\r',
-            [self](const boost::system::error_code &ec, std::size_t) {
-                if (ec) return;
+        boost::asio::async_read_until(socket_, buff_, "\r\n",
+            [self](const boost::system::error_code &ec, std::size_t bytes) {
+                if (ec || bytes > MAX_HEADER_LINE_BYTES) {
+                    self->finish();
+                    return;
+                }
                 std::istream stream{&self->buff_};
                 std::string line, ignore;
                 std::getline(stream, line, '\r');
                 std::getline(stream, ignore, '\n');
+                self->header_bytes_ += bytes;
+                if (self->header_bytes_ > MAX_HEADERS_BYTES) {
+                    self->finish();
+                    return;
+                }
                 self->headers_.on_read_header(line);
 
                 if (line.empty()) {
@@ -182,18 +242,21 @@ class DeviceSession : public std::enable_shared_from_this<DeviceSession>
             body = response_404();
         }
         auto resp = std::make_shared<std::string>(std::move(body));
+        cancel_timeout();
+        arm_timeout(WRITE_TIMEOUT);
         boost::asio::async_write(socket_, boost::asio::buffer(*resp),
             [self, resp](const boost::system::error_code &, std::size_t) {
-                boost::system::error_code ec;
-                self->socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+                self->cancel_timeout();
+                self->finish();
             });
     }
 
 public:
-    explicit DeviceSession(boost::asio::ip::tcp::socket socket)
-        : socket_(std::move(socket)) {}
+    explicit DeviceSession(boost::asio::ip::tcp::socket socket, std::function<void(DeviceSession *)> on_done)
+        : socket_(std::move(socket)), timer_(socket_.get_executor()), on_done_(std::move(on_done)) {}
 
     void start() { read_first_line(); }
+    void stop() { finish(); }
 };
 
 // ---------------------------------------------------------------------------
@@ -217,7 +280,7 @@ void DeviceHttpServer::start()
     guard_ = std::make_unique<work_guard_t>(io_.get_executor());
 
     boost::system::error_code ec;
-    tcp::endpoint ep{tcp::v4(), DEVICE_LOCALHOST_PORT};
+    tcp::endpoint ep{boost::asio::ip::address_v4::loopback(), DEVICE_LOCALHOST_PORT};
     acceptor_.open(ep.protocol(), ec);
     if (ec) { BOOST_LOG_TRIVIAL(error) << "[DeviceHttpServer] open failed: " << ec.message(); running_ = false; return; }
     acceptor_.set_option(tcp::acceptor::reuse_address(true), ec);
@@ -237,9 +300,14 @@ void DeviceHttpServer::stop()
         return; // not running
 
     BOOST_LOG_TRIVIAL(info) << "[DeviceHttpServer] stopping";
-    boost::system::error_code ec;
-    acceptor_.close(ec);
-    io_.stop();
+    boost::asio::post(io_, [this] {
+        boost::system::error_code ec;
+        acceptor_.close(ec);
+        const auto sessions = std::vector<std::shared_ptr<DeviceSession>>(sessions_.begin(), sessions_.end());
+        for (const auto &session : sessions)
+            session->stop();
+        sessions_.clear();
+    });
     if (guard_) guard_.reset();
     if (worker_.joinable()) worker_.join();
     io_.restart(); // allow re-start if needed
@@ -251,7 +319,21 @@ void DeviceHttpServer::do_accept()
     acceptor_.async_accept(
         [this](boost::system::error_code ec, boost::asio::ip::tcp::socket socket) {
             if (!ec && running_) {
-                std::make_shared<DeviceSession>(std::move(socket))->start();
+                if (sessions_.size() >= MAX_CONNECTIONS) {
+                    boost::system::error_code close_ec;
+                    socket.close(close_ec);
+                } else {
+                    auto session = std::make_shared<DeviceSession>(std::move(socket), [this](DeviceSession *done) {
+                        for (auto it = sessions_.begin(); it != sessions_.end(); ++it) {
+                            if (it->get() == done) {
+                                sessions_.erase(it);
+                                break;
+                            }
+                        }
+                    });
+                    sessions_.insert(session);
+                    session->start();
+                }
             }
             if (running_) {
                 do_accept();

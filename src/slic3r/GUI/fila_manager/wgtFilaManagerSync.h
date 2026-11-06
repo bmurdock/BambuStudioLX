@@ -22,6 +22,11 @@ public:
     explicit wgtFilaManagerSync(wgtFilaManagerStore* store);
     ~wgtFilaManagerSync() = default;
 
+    void reset_session() {
+        m_prev_tray_exists.clear();
+        m_auto_added_rfid_uuids.clear();
+        m_pending_badges.clear();
+    }
     bool on_device_update(MachineObject* obj);
     bool sync_all_trays(MachineObject* obj);
     bool on_device_disconnect(const std::string& dev_id, const std::string& dev_name);

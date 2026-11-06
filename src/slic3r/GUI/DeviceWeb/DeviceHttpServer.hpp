@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <unordered_set>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -14,6 +15,8 @@
 #define DEVICE_LOCALHOST_URL "http://localhost:"
 
 namespace Slic3r { namespace GUI {
+
+class DeviceSession;
 
 class DeviceHttpServer
 {
@@ -35,6 +38,7 @@ private:
     std::unique_ptr<work_guard_t>  guard_;
     boost::asio::ip::tcp::acceptor acceptor_{io_};
     boost::thread                  worker_;
+    std::unordered_set<std::shared_ptr<DeviceSession>> sessions_;
 };
 
 }} // namespace Slic3r::GUI
