@@ -74,12 +74,20 @@ set(EXPAT_SOURCES
     xmlrole.c
     xmltok.c
     xcs.c
-    random_arc4random.c
-    random_arc4random_buf.c
-    random_dev_urandom.c
-    random_getentropy.c
 )
-if(HAVE_SYSCALL_GETRANDOM)
+if(HAVE_ARC4RANDOM)
+    list(APPEND EXPAT_SOURCES random_arc4random.c)
+endif()
+if(HAVE_ARC4RANDOM_BUF)
+    list(APPEND EXPAT_SOURCES random_arc4random_buf.c)
+endif()
+if(XML_DEV_URANDOM)
+    list(APPEND EXPAT_SOURCES random_dev_urandom.c)
+endif()
+if(HAVE_GETENTROPY)
+    list(APPEND EXPAT_SOURCES random_getentropy.c)
+endif()
+if(HAVE_GETRANDOM OR HAVE_SYSCALL_GETRANDOM)
     list(APPEND EXPAT_SOURCES random_getrandom.c)
 endif()
 if(WIN32)
