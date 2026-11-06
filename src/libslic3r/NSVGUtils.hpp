@@ -12,6 +12,9 @@
 // Helper function to work with nano svg
 namespace Slic3r {
 
+// Preserve NanoSVG's color representation without exposing its private helpers.
+unsigned int nsvgParseColorHex(const char* text);
+
 /// <summary>
 /// Paramreters for conversion curve from SVG to lines in Polygon
 /// </summary>

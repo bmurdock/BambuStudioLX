@@ -237,6 +237,68 @@ TEST_CASE("FilamentGroup golden regression", "[filament_group][golden]") {
 
 // ============ Layer 2: Property Checks ============
 
+TEST_CASE("Retained flush candidates preserve the loaded AMS color preference", "[filament_group][ams-preference]") {
+    // a56460272 intentionally retains candidates within five change budgets.
+    // These fixtures predated that policy; preserve both its placement and a
+    // bounded cost, rather than relaxing the shared golden score tolerance.
+    const auto name = GENERATE("basic_47", "constraint_88");
+    auto tc = load_test_case(std::string(FG_TEST_GOLDEN_DIR) + "/config_b/" + name + ".json");
+    const auto result = run_and_evaluate(tc.context);
+    const auto eval = full_evaluate_map(tc.context, result.filament_map);
+    auto extruder = [&](int filament) {
+        return tc.context.nozzle_info.nozzle_list.at(result.filament_map.at(filament)).extruder_id;
+    };
+    REQUIRE(result.constraints_ok);
+    if (std::string(name) == "basic_47") {
+        REQUIRE(eval.flush_cost == 0);
+        REQUIRE(extruder(2) == 0);
+        REQUIRE(eval.full_score <= 279.0 + 996.63);
+    } else {
+        REQUIRE(extruder(0) == 1);
+        REQUIRE(extruder(2) == 0);
+        REQUIRE(extruder(3) == 0);
+        REQUIRE(eval.full_score <= 4926.6 + 988.45);
+    }
+}
+
+TEST_CASE("Match mode respects aggregate extruder capacity", "[filament_group][capacity]") {
+    auto tc = load_test_case(std::string(FG_TEST_GOLDEN_DIR) + "/config_a/mode_match_150.json");
+    auto& ctx = tc.context;
+    ctx.machine_info.max_group_size = {1, 3};
+    for (auto& filament : ctx.model_info.filament_info) {
+        filament.type = "PLA";
+        filament.is_support = false;
+        filament.usage_type = FilamentUsageType::ModelOnly;
+    }
+
+    SECTION("identical slots cannot rebalance beyond an extruder's capacity") {
+        for (auto& extruder : ctx.machine_info.machine_filament_info)
+            for (auto& filament : extruder) {
+                filament.type = "PLA";
+                filament.color = FilamentGroupUtils::Color(80, 80, 80);
+            }
+    }
+    SECTION("type relaxation uses only the capacity remaining after strict matching") {
+        for (auto& filament : ctx.machine_info.machine_filament_info[1])
+            filament.type = "ABS";
+    }
+    SECTION("missing AMS metadata still permits use of the extruder's capacity") {
+        ctx.machine_info.machine_filament_info[1].clear();
+        ctx.machine_info.machine_filament_info[0].resize(1);
+    }
+
+    auto result = run_and_evaluate(ctx);
+    for (const auto& violation : result.violations) INFO(violation);
+    REQUIRE(result.constraints_ok);
+    std::vector<int> counts(2, 0);
+    for (auto filament : collect_sorted_used_filaments(ctx.model_info.layer_filaments)) {
+        REQUIRE(result.filament_map[filament] >= 0);
+        REQUIRE(result.filament_map[filament] < ctx.nozzle_info.nozzle_list.size());
+        ++counts[ctx.nozzle_info.nozzle_list[result.filament_map[filament]].extruder_id];
+    }
+    REQUIRE(counts == std::vector<int>{1, 3});
+}
+
 TEST_CASE("FilamentGroup property checks", "[filament_group][property]") {
     auto& specs = get_property_specs();
     auto spec = GENERATE_REF(from_range(specs));

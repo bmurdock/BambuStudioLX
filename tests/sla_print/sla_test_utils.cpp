@@ -260,8 +260,16 @@ static void _test_concave_hull(const Polygons &hull, const ExPolygons &polys)
     
     REQUIRE(cchull_holes == 0);
     
-    Polygons intr = diff(to_polygons(polys), hull);
-    REQUIRE(intr.empty());
+    const Polygons source = to_polygons(polys);
+    const Polygons intr = diff(source, hull);
+    const double diff_area_mm2 = std::abs(area(intr)) * SCALING_FACTOR * SCALING_FACTOR;
+    CAPTURE(diff_area_mm2);
+
+    // Integer clipping may leave a boundary sliver. Bound its maximum depth in
+    // physical units instead of using an area limit that depends on perimeter
+    // and coordinate-grid resolution.
+    const Polygons tolerance_hull = offset(hull, float(scaled(2 * EPSILON)));
+    REQUIRE(diff(source, tolerance_hull).empty());
 }
 
 void test_concave_hull(const ExPolygons &polys) {
@@ -307,8 +315,8 @@ void check_validity(const TriangleMesh &input_mesh, int flags)
 void check_raster_transformations(sla::RasterBase::Orientation o, sla::RasterBase::TMirroring mirroring)
 {
     double disp_w = 120., disp_h = 68.;
-    sla::RasterBase::Resolution res{2560, 1440};
-    sla::RasterBase::PixelDim pixdim{disp_w / res.width_px, disp_h / res.height_px};
+    sla::Resolution res{2560, 1440};
+    sla::PixelDim pixdim{disp_w / res.width_px, disp_h / res.height_px};
     
     auto bb = BoundingBox({0, 0}, {scaled(disp_w), scaled(disp_h)});
     sla::RasterBase::Trafo trafo{o, mirroring};
@@ -400,7 +408,7 @@ double raster_white_area(const sla::RasterGrayscaleAA &raster)
     return a;
 }
 
-double predict_error(const ExPolygon &p, const sla::RasterBase::PixelDim &pd)
+double predict_error(const ExPolygon &p, const sla::PixelDim &pd)
 {
     auto lines = p.lines();
     double pix_err = pixel_area(FullWhite, pd)  / 2.;

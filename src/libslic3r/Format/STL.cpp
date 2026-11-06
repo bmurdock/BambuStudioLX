@@ -42,11 +42,8 @@ bool load_stl(const char *path, Model *model, const char *object_name_in, Import
 bool store_stl(const char *path, TriangleMesh *mesh, bool binary)
 {
     if (binary)
-        mesh->write_binary(path);
-    else
-        mesh->write_ascii(path);
-    //FIXME returning false even if write failed.
-    return true;
+        return mesh->write_binary(path);
+    return mesh->write_ascii(path);
 }
 
 bool store_stl(const char *path, ModelObject *model_object, bool binary)

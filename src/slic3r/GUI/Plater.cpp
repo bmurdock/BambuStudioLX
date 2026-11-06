@@ -23688,7 +23688,10 @@ void Plater::export_stl(bool extended, bool selection_only, bool multi_stls)
                 auto mesh = mesh_to_export(*object, i.second);
                 mesh.translate(-object->origin_translation.cast<float>());
 
-                Slic3r::store_stl(get_save_file(path_u8, object->name).c_str(), &mesh, true);
+                if (!Slic3r::store_stl(get_save_file(path_u8, object->name).c_str(), &mesh, true)) {
+                    show_error(this, _L("Failed to export STL file."));
+                    return;
+                }
             }
             return;
         }
@@ -23701,12 +23704,16 @@ void Plater::export_stl(bool extended, bool selection_only, bool multi_stls)
         for (const ModelObject* o : p->model.objects) {
             auto mesh = mesh_to_export(*o, -1);
             mesh.translate(-o->origin_translation.cast<float>());
-            Slic3r::store_stl(get_save_file(path_u8, o->name).c_str(), &mesh, true);
+            if (!Slic3r::store_stl(get_save_file(path_u8, o->name).c_str(), &mesh, true)) {
+                show_error(this, _L("Failed to export STL file."));
+                return;
+            }
         }
         return;
     }
 
-    Slic3r::store_stl(path_u8.c_str(), &mesh, true);
+    if (!Slic3r::store_stl(path_u8.c_str(), &mesh, true))
+        show_error(this, _L("Failed to export STL file."));
 //    p->statusbar()->set_status_text(format_wxstr(_L("STL file exported to %s"), path));
 }
 

@@ -432,6 +432,9 @@ SCENARIO("Elephant foot compensation", "[ElephantFoot]") {
 
 	GIVEN("Tiny contour") {
 		ExPolygon expoly({ { 133382606, 94912473 }, { 134232493, 95001115 }, { 133783926, 95159440 }, { 133441897, 95180666 }, { 133408242, 95191984 }, { 133339012, 95166830 }, { 132991642, 95011087 }, { 133206549, 94908304 } });
+        // Legacy integer coordinates were authored with a 1e-6 mm scale.
+        expoly.scale(1e-6 / SCALING_FACTOR);
+        REQUIRE(unscale<double>(expoly.contour.bounding_box().size().y()) < 0.42);
 		WHEN("Compensated") {
 			ExPolygon expoly_compensated = elephant_foot_compensation(expoly, Flow(0.419999987f, 0.2f, 0.4f), 0.2f);
 #ifdef TESTS_EXPORT_SVGS

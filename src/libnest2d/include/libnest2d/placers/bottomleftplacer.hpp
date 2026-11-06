@@ -123,7 +123,10 @@ protected:
                     getY(v) < bin_.height();
         }
 
-        return can_be_packed? PackResult(item) : PackResult();
+        if (!can_be_packed) return PackResult();
+        PackResult result(item);
+        result.score_ = 0.0;
+        return result;
     }
 
     void setInitialPosition(Item& item) {

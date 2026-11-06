@@ -1128,14 +1128,16 @@ static void process_arrangeable(const ArrangePolygon &arrpoly,
 
     if (p.is_counter_clockwise()) p.reverse();
 
-    if (p.size() < 3)
+    if (p.size() < 3 || p.area() == 0.)
         return;
 
     outp.emplace_back(std::move(p));
     Item& item = outp.back();
     item.rotation(rotation);
     item.translation({offs.x(), offs.y()});
-    item.binId(arrpoly.bed_idx);
+    // ArrangePolygon::UNARRANGED and libnest2d::BIN_ID_UNFIT both use -1.
+    // Input polygons without a previous placement still need to be attempted.
+    item.binId(arrpoly.bed_idx < 0 ? libnest2d::BIN_ID_UNSET : arrpoly.bed_idx);
     item.priority(arrpoly.priority);
     item.itemId(arrpoly.itemid);
     item.extrude_id_filament_types = arrpoly.extrude_id_filament_types;
@@ -1193,9 +1195,17 @@ void arrange(ArrangePolygons &      arrangables,
 
     std::vector<Item> items, fixeditems;
     items.reserve(arrangables.size());
+    std::vector<std::size_t> input_indices;
+    input_indices.reserve(arrangables.size());
 
-    for (ArrangePolygon &arrangeable : arrangables)
-        process_arrangeable(arrangeable, items);
+    for (std::size_t index = 0; index < arrangables.size(); ++index) {
+        const auto previous_size = items.size();
+        process_arrangeable(arrangables[index], items);
+        if (items.size() > previous_size)
+            input_indices.push_back(index);
+        else
+            arrangables[index].bed_idx = UNARRANGED;
+    }
 
     for (const ArrangePolygon &fixed: excludes)
         process_arrangeable(fixed, fixeditems);
@@ -1205,11 +1215,12 @@ void arrange(ArrangePolygons &      arrangables,
     _arrange(items, fixeditems, to_nestbin(bed), params, params.progressind, params.stopcondition);
 
     for(size_t i = 0; i < items.size(); ++i) {
+        ArrangePolygon &result = arrangables[input_indices[i]];
         Point tr = items[i].translation();
-        arrangables[i].translation = {coord_t(tr.x()), coord_t(tr.y())};
-        arrangables[i].rotation    = items[i].rotation();
-        arrangables[i].bed_idx     = items[i].binId();
-        arrangables[i].itemid      = items[i].itemId();  // arrange order is useful for sequential printing
+        result.translation = {coord_t(tr.x()), coord_t(tr.y())};
+        result.rotation    = items[i].rotation();
+        result.bed_idx     = items[i].binId() < 0 ? UNARRANGED : items[i].binId();
+        result.itemid      = items[i].itemId();  // arrange order is useful for sequential printing
     }
 }
 

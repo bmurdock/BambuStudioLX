@@ -7,6 +7,8 @@
  */
 
 #pragma once
+
+#include <boost/format.hpp>
 #include <string>
 #include <sstream>
 #include <stdexcept>

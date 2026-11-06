@@ -44,6 +44,9 @@ public:
 
         typename Base::PackGroup fixed_bins;
         std::for_each(first, last, [this, &fixed_bins](Item& itm) {
+            // Degenerate contours have no reference vertex and cannot be placed.
+            // Leave their IDs untouched, as with other items not arranged.
+            if (itm.vertexCount() < 3 || itm.area() == 0.0) return;
             if (itm.isFixed()) {
                 if (itm.binId() < 0) itm.binId(0);
                 auto binidx = size_t(itm.binId());
@@ -151,7 +154,7 @@ public:
                                                score_all_plates % unscale_(it->get().translation()[0]) % unscale_(it->get().translation()[1]))
                                                   .str());
 
-                    if(score >= 0 && score < LARGE_COST_TO_REJECT) {
+                    if(result && std::isfinite(score) && score < LARGE_COST_TO_REJECT) {
                         if (bed_id_firstfit == -1) {
                             bed_id_firstfit = j;
                             result_firstfit = result;
@@ -234,6 +237,15 @@ public:
                 }
             }
         }
+        // Fixed items can occupy a bin that movable items never needed to
+        // open. Keep those bins in the result, and omit unused trailing bins.
+        packed_bins_.resize(std::max(placers.size(), fixed_bins.size()));
+        for (std::size_t index = 0; index < placers.size(); ++index)
+            packed_bins_[index] = placers[index].getItems();
+        for (std::size_t index = placers.size(); index < fixed_bins.size(); ++index)
+            packed_bins_[index] = fixed_bins[index];
+        while (!packed_bins_.empty() && packed_bins_.back().empty())
+            packed_bins_.pop_back();
     }
 
 };

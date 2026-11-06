@@ -1,3 +1,6 @@
+#define NANOSVG_IMPLEMENTATION
+#include "nanosvg/nanosvg.h"
+#undef NANOSVG_IMPLEMENTATION
 #include "NSVGUtils.hpp"
 #include <array>
 #include <charconv> // to_chars
@@ -21,6 +24,11 @@ HealedExPolygons stroke_to_expolygons(const LinesPath &lines_path, const NSVGsha
 } // namespace
 
 namespace Slic3r {
+
+unsigned int nsvgParseColorHex(const char* text)
+{
+    return ::nsvg__parseColorHex(text);
+}
 
 ExPolygonsWithIds create_shape_with_ids(const NSVGimage &image, const NSVGLineParams &param)
 {

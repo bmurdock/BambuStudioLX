@@ -12,7 +12,7 @@ TEST_CASE("SupportMaterial: Three raft layers created", "[SupportMaterial]")
 {
 	Slic3r::Print print;
 	Slic3r::Test::init_and_process_print({ TestMesh::cube_20x20x20 }, print, {
-		{ "support_material", 1 },
+        { "enable_support", 1 },
 		{ "raft_layers",      3 }
 		});
     REQUIRE(print.objects().front()->support_layers().size() == 3);
@@ -29,7 +29,7 @@ SCENARIO("SupportMaterial: support_layers_z and contact_distance", "[SupportMate
 	{
         ConstSupportLayerPtrsAdaptor support_layers = print.objects().front()->support_layers();
 
-		first_support_layer_height_ok = support_layers.front()->print_z == print.config().first_layer_height.value;
+		first_support_layer_height_ok = support_layers.front()->print_z == print.config().initial_layer_print_height.value;
 
 		layer_height_minimum_ok = true;
 		layer_height_maximum_ok = true;
@@ -74,9 +74,9 @@ SCENARIO("SupportMaterial: support_layers_z and contact_distance", "[SupportMate
         WHEN("First layer height = 0.4") {
 			Slic3r::Print print;
 			Slic3r::Test::init_and_process_print({ mesh }, print, {
-				{ "support_material",	1 },
+				{ "enable_support",	1 },
 				{ "layer_height",		0.2 },
-				{ "first_layer_height", 0.4 },
+				{ "initial_layer_print_height", 0.4 },
                 { "dont_support_bridges", false },
 			});
 			bool a, b, c, d;
@@ -89,9 +89,9 @@ SCENARIO("SupportMaterial: support_layers_z and contact_distance", "[SupportMate
         WHEN("Layer height = 0.2 and, first layer height = 0.3") {
 			Slic3r::Print print;
 			Slic3r::Test::init_and_process_print({ mesh }, print, {
-				{ "support_material",	1 },
+				{ "enable_support",	1 },
 				{ "layer_height",		0.2 },
-				{ "first_layer_height", 0.3 },
+				{ "initial_layer_print_height", 0.3 },
                 { "dont_support_bridges", false },
             });
             bool a, b, c, d;
@@ -104,9 +104,9 @@ SCENARIO("SupportMaterial: support_layers_z and contact_distance", "[SupportMate
         WHEN("Layer height = nozzle_diameter[0]") {
 			Slic3r::Print print;
 			Slic3r::Test::init_and_process_print({ mesh }, print, {
-				{ "support_material",	1 },
+				{ "enable_support",	1 },
 				{ "layer_height",		0.2 },
-				{ "first_layer_height", 0.3 },
+				{ "initial_layer_print_height", 0.3 },
                 { "dont_support_bridges", false },
             });
             bool a, b, c, d;
@@ -136,10 +136,10 @@ TEST_CASE("SupportMaterial: forced support is generated", "[SupportMaterial]")
 
     std::vector<coordf_t> contact_z = {1.9};
     std::vector<coordf_t> top_z = {1.1};
-    print.default_object_config.support_material_enforce_layers = 100;
-    print.default_object_config.support_material = 0;
+    print.default_object_config.enforce_support_layers = 100;
+    print.default_object_config.enable_support = 0;
     print.default_object_config.layer_height = 0.2;
-    print.default_object_config.set_deserialize("first_layer_height", "0.3");
+    print.default_object_config.set_deserialize("initial_layer_print_height", "0.3");
 
     print.add_model_object(model.objects[0]);
     print.objects.front()->_slice();
@@ -190,16 +190,16 @@ SCENARIO("SupportMaterial: Checking bridge speed", "[SupportMaterial]")
 
         Print print = Print();
         print.config.brim_width = 0;
-        print.config.skirts = 0;
-        print.config.skirts = 0;
-        print.default_object_config.support_material = 1;
+        print.config.skirt_loops = 0;
+        print.config.skirt_loops = 0;
+        print.default_object_config.enable_support = 1;
         print.default_region_config.top_solid_layers = 0; // so that we don't have the internal bridge over infill.
         print.default_region_config.bridge_speed = 99;
         print.config.cooling = 0;
-        print.config.set_deserialize("first_layer_speed", "100%");
+        print.config.set_deserialize("initial_layer_speed", "100%");
 
         WHEN("support_material_contact_distance = 0.2") {
-            print.default_object_config.support_material_contact_distance = 0.2;
+            print.default_object_config.support_top_z_distance = 0.2;
             print.add_model_object(model.objects[0]);
 
             bool check = test_6_checks(print);
@@ -207,7 +207,7 @@ SCENARIO("SupportMaterial: Checking bridge speed", "[SupportMaterial]")
         }
 
         WHEN("support_material_contact_distance = 0") {
-            print.default_object_config.support_material_contact_distance = 0;
+            print.default_object_config.support_top_z_distance = 0;
             print.add_model_object(model.objects[0]);
 
             bool check = test_6_checks(print);
@@ -215,7 +215,7 @@ SCENARIO("SupportMaterial: Checking bridge speed", "[SupportMaterial]")
         }
 
         WHEN("support_material_contact_distance = 0.2 & raft_layers = 5") {
-            print.default_object_config.support_material_contact_distance = 0.2;
+            print.default_object_config.support_top_z_distance = 0.2;
             print.default_object_config.raft_layers = 5;
             print.add_model_object(model.objects[0]);
 
@@ -224,7 +224,7 @@ SCENARIO("SupportMaterial: Checking bridge speed", "[SupportMaterial]")
         }
 
         WHEN("support_material_contact_distance = 0 & raft_layers = 5") {
-            print.default_object_config.support_material_contact_distance = 0;
+            print.default_object_config.support_top_z_distance = 0;
             print.default_object_config.raft_layers = 5;
             print.add_model_object(model.objects[0]);
 

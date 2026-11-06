@@ -2006,23 +2006,22 @@ bool its_write_stl_ascii(const char *file, const char *label, const std::vector<
         return false;
     }
 
-    fprintf(fp, "solid  %s\n", label);
+    bool success = fprintf(fp, "solid  %s\n", label) >= 0;
 
     for (const stl_triangle_vertex_indices& face : indices) {
         Vec3f vertex[3] = { vertices[face(0)], vertices[face(1)], vertices[face(2)] };
         Vec3f normal    = (vertex[1] - vertex[0]).cross(vertex[2] - vertex[1]).normalized();
-        fprintf(fp, "  facet normal % .8E % .8E % .8E\n", normal(0), normal(1), normal(2));
-        fprintf(fp, "    outer loop\n");
-        fprintf(fp, "      vertex % .8E % .8E % .8E\n", vertex[0](0), vertex[0](1), vertex[0](2));
-        fprintf(fp, "      vertex % .8E % .8E % .8E\n", vertex[1](0), vertex[1](1), vertex[1](2));
-        fprintf(fp, "      vertex % .8E % .8E % .8E\n", vertex[2](0), vertex[2](1), vertex[2](2));
-        fprintf(fp, "    endloop\n");
-        fprintf(fp, "  endfacet\n");
+        success = fprintf(fp, "  facet normal % .8E % .8E % .8E\n", normal(0), normal(1), normal(2)) >= 0 && success;
+        success = fprintf(fp, "    outer loop\n") >= 0 && success;
+        success = fprintf(fp, "      vertex % .8E % .8E % .8E\n", vertex[0](0), vertex[0](1), vertex[0](2)) >= 0 && success;
+        success = fprintf(fp, "      vertex % .8E % .8E % .8E\n", vertex[1](0), vertex[1](1), vertex[1](2)) >= 0 && success;
+        success = fprintf(fp, "      vertex % .8E % .8E % .8E\n", vertex[2](0), vertex[2](1), vertex[2](2)) >= 0 && success;
+        success = fprintf(fp, "    endloop\n") >= 0 && success;
+        success = fprintf(fp, "  endfacet\n") >= 0 && success;
     }
 
-    fprintf(fp, "endsolid  %s\n", label);
-    fclose(fp);
-    return true;
+    success = fprintf(fp, "endsolid  %s\n", label) >= 0 && success;
+    return fclose(fp) == 0 && success;
 }
 
 bool its_write_stl_binary(const char *file, const char *label, const std::vector<stl_triangle_vertex_indices> &indices, const std::vector<stl_vertex> &vertices)
@@ -2033,17 +2032,20 @@ bool its_write_stl_binary(const char *file, const char *label, const std::vector
         return false;
     }
 
+    bool success = true;
     {
         static constexpr const int header_size = 80;
         std::vector<char> header(header_size, 0);
         if (int header_len = std::min((label == nullptr) ? 0 : int(strlen(label)), header_size); header_len > 0)
             ::memcpy(header.data(), label, header_len);
-        ::fwrite(header.data(), header_size, 1, fp);
+        if (::fwrite(header.data(), header_size, 1, fp) != 1)
+            success = false;
     }
 
     uint32_t nfaces = indices.size();
     big_endian_reverse_quads(reinterpret_cast<char*>(&nfaces), 4);
-    ::fwrite(&nfaces, 4, 1, fp);
+    if (::fwrite(&nfaces, 4, 1, fp) != 1)
+        success = false;
 
     stl_facet f;
     f.extra[0] = 0;
@@ -2054,11 +2056,11 @@ bool its_write_stl_binary(const char *file, const char *label, const std::vector
         f.vertex[2] = vertices[face(2)];
         f.normal = (f.vertex[1] - f.vertex[0]).cross(f.vertex[2] - f.vertex[1]).normalized();
         big_endian_reverse_quads(reinterpret_cast<char*>(&f), 48);
-        fwrite(&f, 50, 1, fp);
+        if (fwrite(&f, 50, 1, fp) != 1)
+            success = false;
     }
 
-    fclose(fp);
-    return true;
+    return fclose(fp) == 0 && success;
 }
 
 } // namespace Slic3r

@@ -2132,7 +2132,7 @@ class ConfigOptionEnumsGenericTempl : public ConfigOptionInts
 public:
     ConfigOptionEnumsGenericTempl(const t_config_enum_values *keys_map = nullptr) : keys_map(keys_map) {}
     explicit ConfigOptionEnumsGenericTempl(const t_config_enum_values *keys_map, size_t size, int value) : ConfigOptionInts(size, value), keys_map(keys_map) {}
-    explicit ConfigOptionEnumsGenericTempl(std::initializer_list<int> il) : ConfigOptionInts(std::move(il)), keys_map(keys_map) {}
+    explicit ConfigOptionEnumsGenericTempl(std::initializer_list<int> il) : ConfigOptionInts(std::move(il)) {}
     explicit ConfigOptionEnumsGenericTempl(const std::vector<int> &vec) : ConfigOptionInts(vec) {}
     explicit ConfigOptionEnumsGenericTempl(std::vector<int> &&vec) : ConfigOptionInts(std::move(vec)) {}
 
@@ -2156,7 +2156,14 @@ public:
         if (rhs->type() != this->type())
             throw ConfigurationError("ConfigOptionEnumGeneric: Assigning an incompatible type");
         // rhs could be of the following type: ConfigOptionEnumsGeneric
-        this->values = dynamic_cast<const ConfigOptionEnumsGenericTempl *>(rhs)->values;
+        const auto *source = dynamic_cast<const ConfigOptionEnumsGenericTempl *>(rhs);
+        if (source == nullptr)
+            throw ConfigurationError("ConfigOptionEnumsGeneric: Assigning an incompatible nullable type");
+        this->values = source->values;
+        // Raw definition defaults store only values. Forward-compatibility
+        // substitution must preserve the destination's factory-bound map.
+        if (source->keys_map != nullptr)
+            this->keys_map = source->keys_map;
     }
 
     std::string serialize() const override
@@ -2276,6 +2283,7 @@ public:
 		    case coPercents:        { auto opt = new ConfigOptionPercentsNullable();archive(*opt); return opt; }
 		    case coBools:           { auto opt = new ConfigOptionBoolsNullable();	archive(*opt); return opt; }
 		    case coFloatsOrPercents:{ auto opt = new ConfigOptionFloatsOrPercentsNullable();archive(*opt); return opt; }
+            case coEnums:          { auto opt = new ConfigOptionEnumsGenericNullable(this->enum_keys_map); archive(*opt); return opt; }
             default: throw ConfigurationError(std::string("ConfigOptionDef::load_option_from_archive(): Unknown nullable option type for option ") + this->opt_key);
 		    }
     	} else {
@@ -2292,6 +2300,7 @@ public:
 		    case coFloatsOrPercents:  { auto opt = new ConfigOptionFloatsOrPercents(); 	archive(*opt); return opt; }
 		    case coPoint:           { auto opt = new ConfigOptionPoint(); 			archive(*opt); return opt; }
 		    case coPoints:          { auto opt = new ConfigOptionPoints(); 			archive(*opt); return opt; }
+		    case coPointsGroups:    { auto opt = new ConfigOptionPointsGroups(); 	archive(*opt); return opt; }
 		    case coPoint3:          { auto opt = new ConfigOptionPoint3(); 			archive(*opt); return opt; }
 		    case coBool:            { auto opt = new ConfigOptionBool(); 			archive(*opt); return opt; }
 		    case coBools:           { auto opt = new ConfigOptionBools(); 			archive(*opt); return opt; }
@@ -2312,6 +2321,7 @@ public:
 		    case coPercents:        archive(*static_cast<const ConfigOptionPercentsNullable*>(opt));break;
 		    case coBools:           archive(*static_cast<const ConfigOptionBoolsNullable*>(opt)); 	break;
             case coFloatsOrPercents: archive(*static_cast<const ConfigOptionFloatsOrPercentsNullable*>(opt)); break;
+            case coEnums:           archive(*static_cast<const ConfigOptionEnumsGenericNullable*>(opt)); break;
             default: throw ConfigurationError(std::string("ConfigOptionDef::save_option_to_archive(): Unknown nullable option type for option ") + this->opt_key);
 		    }
 		} else {
@@ -2328,6 +2338,7 @@ public:
             case coFloatsOrPercents: archive(*static_cast<const ConfigOptionFloatsOrPercents *>(opt)); break;
 		    case coPoint:           archive(*static_cast<const ConfigOptionPoint*>(opt)); 			break;
 		    case coPoints:          archive(*static_cast<const ConfigOptionPoints*>(opt)); 			break;
+		    case coPointsGroups:    archive(*static_cast<const ConfigOptionPointsGroups*>(opt)); 	break;
 		    case coPoint3:          archive(*static_cast<const ConfigOptionPoint3*>(opt)); 			break;
 		    case coBool:            archive(*static_cast<const ConfigOptionBool*>(opt)); 			break;
 		    case coBools:           archive(*static_cast<const ConfigOptionBools*>(opt)); 			break;

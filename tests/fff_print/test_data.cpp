@@ -7,7 +7,6 @@
 #include "libslic3r/Format/OBJ.hpp"
 #include "libslic3r/Format/STL.hpp"
 
-#include <cstdlib>
 #include <string>
 
 #include <boost/nowide/cstdio.hpp>
@@ -186,22 +185,10 @@ TriangleMesh mesh(TestMesh m)
     return mesh;
 }
 
-static bool verbose_gcode() 
-{
-    const char *v = std::getenv("SLIC3R_TESTS_GCODE");
-    if (v == nullptr)
-    	return false;
-    std::string s(v);
-    return s == "1" || s == "on" || s == "yes";
-}
-
 void init_print(std::vector<TriangleMesh> &&meshes, Slic3r::Print &print, Slic3r::Model &model, const DynamicPrintConfig &config_in, bool comments)
 {
 	DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
     config.apply(config_in);
-
-    if (verbose_gcode())
-        config.set_key_value("gcode_comments", new ConfigOptionBool(true));
 
     for (const TriangleMesh &t : meshes) {
 		ModelObject *object = model.add_object();
@@ -209,7 +196,9 @@ void init_print(std::vector<TriangleMesh> &&meshes, Slic3r::Print &print, Slic3r
 		object->add_volume(std::move(t));
 		object->add_instance();
 	}
-    arrange_objects(model, InfiniteBed{}, ArrangeParams{ scaled(min_object_distance(config))});
+    const BoundingBox bed(get_bed_shape(config));
+    const Point bed_center = bed.defined ? bed.center() : Point(0, 0);
+    arrange_objects(model, InfiniteBed{bed_center}, ArrangeParams{ scaled(min_object_distance(config))});
 	for (ModelObject *mo : model.objects) {
         mo->ensure_on_bed();
 		print.auto_assign_extruders(mo);

@@ -862,6 +862,7 @@ private:
         }
 
         for (auto &it : items_) {
+            if (!config_.progressFunc) break;
             config_.progressFunc((boost::format("_trypack: plate: %4%, existing object: %1%, pos: (%2%, %3%)") % it.get().name % unscale_(it.get().translation()[0]) %
                                   unscale_(it.get().translation()[1]) % plateID())
                                      .str());
@@ -1080,6 +1081,7 @@ private:
         auto   binbb  = sl::boundingBox(bin_);
 
         for (auto &it : items_) {
+            if (!config_.progressFunc) break;
             config_.progressFunc((boost::format("_trypack_with_original_pos: plate: %4%, existing object: %1%, pos: (%2%, %3%)") % it.get().name % unscale_(it.get().translation()[0]) %
                                   unscale_(it.get().translation()[1]) % plateID())
                                      .str());
@@ -1112,7 +1114,8 @@ private:
             ret        = PackResult(item);
             ret.score_ = global_score;
             // merged_pile_ = nfp::merge(merged_pile_, item.transformedShape());
-            config_.progressFunc((boost::format("_trypack_with_original_pos: item %1% can pack") % item.name).str());
+            if (config_.progressFunc)
+                config_.progressFunc((boost::format("_trypack_with_original_pos: item %1% can pack") % item.name).str());
         } else {
             ret = PackResult(best_overfit);
         }

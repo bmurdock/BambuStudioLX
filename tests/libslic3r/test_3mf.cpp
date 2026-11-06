@@ -3,6 +3,7 @@
 #include "libslic3r/Model.hpp"
 #include "libslic3r/Format/3mf.hpp"
 #include "libslic3r/Format/STL.hpp"
+#include "libslic3r/Geometry/ConvexHull.hpp"
 
 #include <boost/filesystem/operations.hpp>
 
@@ -94,38 +95,67 @@ SCENARIO("2D convex hull of sinking object", "[3mf]") {
 
             // set instance's attitude so that it is rotated, scaled and sinking
             ModelInstance* instance = object->instances.front();
-            instance->set_rotation(X, -M_PI / 4.0);
+            instance->set_rotation(Vec3d(-M_PI / 4.0, 0.0, 0.0));
             instance->set_offset(Vec3d::Zero());
             instance->set_scaling_factor({ 2.0, 2.0, 2.0 });
 
             // calculate 2D convex hull
             Polygon hull_2d = object->convex_hull_2d(instance->get_transformation().get_matrix());
 
-            // verify result
-            Points result = {
-                { -91501496, -15914144 },
-                { 91501496, -15914144 },
-                { 91501496, 4243 },
-                { 78229680, 4246883 },
-                { 56898100, 4246883 },
-                { -85501496, 4242641 },
-                { -91501496, 4243 }
-            };
+            // Independently project the raw mesh rather than copying the cached
+            // convex-hull implementation or scale-dependent integer fixtures.
+            Points projected_vertices;
+            bool has_vertex_below_bed = false;
+            bool has_vertex_above_bed = false;
+            for (const ModelVolume *volume : object->volumes) {
+                if (!volume->is_model_part())
+                    continue;
+                const Transform3d transform = instance->get_transformation().get_matrix() * volume->get_matrix();
+                for (const Vec3f &vertex : volume->mesh().its.vertices) {
+                    const Vec3d transformed = transform * vertex.cast<double>();
+                    has_vertex_below_bed |= transformed.z() < 0.;
+                    has_vertex_above_bed |= transformed.z() > 0.;
+                    projected_vertices.emplace_back(
+                        scaled<coord_t>(transformed.x()), scaled<coord_t>(transformed.y()));
+                }
+            }
+            const Polygon expected = Geometry::convex_hull(std::move(projected_vertices));
 
-            // Allow 1um error due to floating point rounding.
-            bool res = hull_2d.points.size() == result.size();
-            if (res)
-                for (size_t i = 0; i < result.size(); ++ i) {
-                    const Point &p1 = result[i];
-                    const Point &p2 = hull_2d.points[i];
-                    if (std::abs(p1.x() - p2.x()) > 1 || std::abs(p1.y() - p2.y()) > 1) {
-                        res = false;
-                        break;
+            // Polygon start vertex and winding are not part of the projection
+            // contract. Allow one coordinate quantum for float-to-integer
+            // rounding between the raw mesh and cached 3D hull paths.
+            auto same_shape = [](const Polygon &lhs, const Polygon &rhs) {
+                if (lhs.points.size() != rhs.points.size())
+                    return false;
+                const size_t count = lhs.points.size();
+                if (count == 0)
+                    return true;
+                auto point_matches = [](const Point &a, const Point &b) {
+                    return std::abs(a.x() - b.x()) <= 1 && std::abs(a.y() - b.y()) <= 1;
+                };
+                for (size_t start = 0; start < count; ++start) {
+                    for (int direction : {1, -1}) {
+                        bool matches = true;
+                        for (size_t i = 0; i < count; ++i) {
+                            const size_t rhs_index = direction > 0 ?
+                                (start + i) % count : (start + count - i) % count;
+                            if (!point_matches(lhs.points[i], rhs.points[rhs_index])) {
+                                matches = false;
+                                break;
+                            }
+                        }
+                        if (matches)
+                            return true;
                     }
                 }
+                return false;
+            };
 
             THEN("2D convex hull should match with reference") {
-                REQUIRE(res);
+                CAPTURE(hull_2d.points, expected.points);
+                REQUIRE(has_vertex_below_bed);
+                REQUIRE(has_vertex_above_bed);
+                REQUIRE(same_shape(hull_2d, expected));
             }
         }
     }

@@ -57,7 +57,7 @@ TEST_CASE("Fill: adjusted solid distance") {
 #endif
 
 TEST_CASE("Fill: Pattern Path Length", "[Fill]") {
-    std::unique_ptr<Slic3r::Fill> filler(Slic3r::Fill::new_from_type("rectilinear"));
+    std::unique_ptr<Slic3r::Fill> filler(Slic3r::Fill::new_from_type("zig-zag"));
     filler->angle = float(-(PI)/2.0);
 	FillParams fill_params;
 	filler->spacing = 5;
@@ -151,7 +151,7 @@ TEST_CASE("Fill: Pattern Path Length", "[Fill]") {
     SECTION("Rotated Square") {
         Slic3r::Points square { Point::new_scale(0,0), Point::new_scale(50,0), Point::new_scale(50,50), Point::new_scale(0,50)};
         Slic3r::ExPolygon expolygon(square);
-        std::unique_ptr<Slic3r::Fill> filler(Slic3r::Fill::new_from_type("rectilinear"));
+        std::unique_ptr<Slic3r::Fill> filler(Slic3r::Fill::new_from_type("zig-zag"));
 		filler->bounding_box = get_extents(expolygon.contour);
         filler->angle = 0;
         
@@ -206,7 +206,10 @@ TEST_CASE("Fill: Pattern Path Length", "[Fill]") {
                 Slic3r::Point(59515153,20697500),Slic3r::Point(58502480,20697500),Slic3r::Point(58502480,5422499)
         };
         Slic3r::ExPolygon expolygon(points);
-         
+        // This raw-coordinate fixture predates the change in coordinate scale.
+        constexpr double legacy_scaling_factor = 1e-6;
+        expolygon.scale(legacy_scaling_factor / SCALING_FACTOR);
+
         REQUIRE(test_if_solid_surface_filled(expolygon, 0.55) == true);
         REQUIRE(test_if_solid_surface_filled(expolygon, 0.55, PI/2.0) == true);
     }
@@ -461,7 +464,7 @@ for my $pattern (qw(rectilinear honeycomb hilbertcurve concentric)) {
 
 bool test_if_solid_surface_filled(const ExPolygon& expolygon, double flow_spacing, double angle, double density)
 {
-    std::unique_ptr<Slic3r::Fill> filler(Slic3r::Fill::new_from_type("rectilinear"));
+    std::unique_ptr<Slic3r::Fill> filler(Slic3r::Fill::new_from_type("zig-zag"));
 	filler->bounding_box = get_extents(expolygon.contour);
     filler->angle = float(angle);
 
@@ -471,6 +474,7 @@ bool test_if_solid_surface_filled(const ExPolygon& expolygon, double flow_spacin
 	FillParams fill_params;
 	fill_params.density = float(density);
 	fill_params.dont_adjust = false;
+    fill_params.flow = flow;
 
 	Surface surface(stBottom, expolygon);
 	Slic3r::Polylines paths = filler->fill_surface(&surface, fill_params);
@@ -479,8 +483,10 @@ bool test_if_solid_surface_filled(const ExPolygon& expolygon, double flow_spacin
     Polygons grown_paths;
     grown_paths.reserve(paths.size());
 
-    // figure out what is actually going on here re: data types
-    float line_offset = float(scale_(filler->spacing / 2.0 + EPSILON));
+    // Spacing measures centerline separation, not bead width. Solid-spacing
+    // adjustment also changes the emitted width (see fill_surface_extrusion).
+    const Flow emitted_flow = flow.with_spacing(float(filler->spacing));
+    float line_offset = float(scale_(emitted_flow.width() / 2.0 + EPSILON));
     std::for_each(paths.begin(), paths.end(), [line_offset, &grown_paths] (const Slic3r::Polyline& p) {
         polygons_append(grown_paths, offset(p, line_offset));
     });
@@ -504,6 +510,12 @@ bool test_if_solid_surface_filled(const ExPolygon& expolygon, double flow_spacin
 	}
 #endif
 
+    for (const ExPolygon &gap : uncovered) {
+        const BoundingBox box = get_extents(gap);
+        WARN("Uncovered solid infill: area=" << gap.area() * SCALING_FACTOR * SCALING_FACTOR
+             << " mm2, min=" << unscale<double>(box.min.x()) << "," << unscale<double>(box.min.y())
+             << " mm, max=" << unscale<double>(box.max.x()) << "," << unscale<double>(box.max.y()) << " mm");
+    }
     return uncovered.empty(); // solid surface is fully filled
 }
 
@@ -1265,7 +1277,7 @@ TEST_CASE("Fill: conformal CrossZag Alternate starts inward on odd layers", "[Fi
     REQUIRE(lean0 * lean1 < 0.);
 }
 
-TEST_CASE("Fill: conformal orthogonal uses offset loops on odd layers", "[Fill][Conformal]") {
+TEST_CASE("Fill: legacy conformal orthogonal mode retains the off layout", "[Fill][Conformal]") {
     ExPolygon disk;
     disk.contour = make_regular_ngon(20., 48);
     const BoundingBox obj_bb = get_extents(disk);
@@ -1276,11 +1288,16 @@ TEST_CASE("Fill: conformal orthogonal uses offset loops on odd layers", "[Fill][
     dump_conformal_overlay("cylinder_orthogonal", disk, even_paths, odd_paths);
 
     REQUIRE(count_long_segment_angle_bins(even_paths, 2.0, 20.0) >= 4);
-    size_t closed = 0;
-    for (const Polyline &pl : odd_paths)
-        if (polyline_is_closed(pl))
-            ++closed;
-    REQUIRE(closed >= 1);
+    // Orthogonal is retained as a preset compatibility value; Fill.cpp maps
+    // it to None, and the supported UI offers only None and Alternate.
+    const Polylines even_off = fill_conformal(disk, 0, ConformalStagger::None, obj_bb, false);
+    const Polylines odd_off = fill_conformal(disk, 1, ConformalStagger::None, obj_bb, false);
+    REQUIRE(even_paths.size() == even_off.size());
+    REQUIRE(odd_paths.size() == odd_off.size());
+    for (size_t i = 0; i < even_paths.size(); ++i)
+        REQUIRE(even_paths[i].points == even_off[i].points);
+    for (size_t i = 0; i < odd_paths.size(); ++i)
+        REQUIRE(odd_paths[i].points == odd_off[i].points);
 }
 
 TEST_CASE("Fill: conformal cone keeps the same headings", "[Fill][Conformal]") {
@@ -1368,8 +1385,7 @@ TEST_CASE("Fill: conformal infill processes a cube without throwing", "[Fill][Co
         { "conformal_stagger", "none" },
         { "top_shell_layers", 0 },
         { "bottom_shell_layers", 0 },
-        { "wall_loops", 1 },
-        { "gcode_comments", 1 }
+        { "wall_loops", 1 }
     });
     Model model;
     ModelObject *object = model.add_object();

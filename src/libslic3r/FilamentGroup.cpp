@@ -1134,6 +1134,24 @@ namespace Slic3r
         std::vector<int>machine_filament_capacity(machine_filament_list.size(),l_nodes.size());
         std::vector<int>extruder_filament_count(2, 0);
 
+        // Individual AMS slots may serve several project filaments, but their
+        // combined assignment must fit the extruder's available AMS capacity.
+        const bool enforce_capacity = std::accumulate(ctx.machine_info.max_group_size.begin(),
+            ctx.machine_info.max_group_size.end(), 0) >= static_cast<int>(used_filaments.size());
+        const auto remaining_group_capacity = [&] {
+            std::vector<std::pair<std::set<int>, int>> groups;
+            if (!enforce_capacity) return groups;
+            for (std::size_t extruder = 0; extruder < ctx.machine_info.max_group_size.size(); ++extruder) {
+                std::set<int> slots;
+                for (std::size_t index = 0; index < r_nodes.size(); ++index)
+                    if (machine_filament_list[r_nodes[index]].extruder_id == static_cast<int>(extruder))
+                        slots.insert(static_cast<int>(index));
+                groups.emplace_back(std::move(slots), std::max(0,
+                    ctx.machine_info.max_group_size[extruder] - extruder_filament_count[extruder]));
+            }
+            return groups;
+        };
+
         auto is_extruder_filament_compatible = [&unprintable_limit_indices](int filament_idx, int extruder_id) {
             auto iter = unprintable_limit_indices.find(filament_idx);
             if (iter != unprintable_limit_indices.end() && iter->second == extruder_id)
@@ -1197,6 +1215,8 @@ namespace Slic3r
                 std::vector<std::pair<int, int>> valid_candidates; // 存储可用的机器耗材idx与评分
                 for (auto machine_filament : optional_filaments) {
                     int new_extruder_id = machine_filament_list[machine_filament].extruder_id;
+                    if (enforce_capacity && extruder_filament_count[new_extruder_id] >=
+                        ctx.machine_info.max_group_size[new_extruder_id]) continue;
 
                     // 计算新分配的偏好得分
                     int preference_score = 0;
@@ -1259,7 +1279,8 @@ namespace Slic3r
             });
 
         {
-            MatchModeGroupSolver s(match_cost_matrix, l_nodes, r_nodes, machine_filament_capacity, unlink_limits_full);
+            MinFlushFlowSolver s(match_cost_matrix, l_nodes, r_nodes, {}, unlink_limits_full,
+                {}, machine_filament_capacity, remaining_group_capacity());
             ungrouped_filaments = optimize_map_to_machine_filament(s.solve(), l_nodes, r_nodes,group);
             if (ungrouped_filaments.empty())
                 return group;
@@ -1272,7 +1293,8 @@ namespace Slic3r
                 return is_extruder_filament_compatible(used_filament_idx, machine_filament_list[machine_filament_idx].extruder_id);
                 });
 
-            MatchModeGroupSolver s(match_cost_matrix, l_nodes, r_nodes, machine_filament_capacity, unlink_limits);
+            MinFlushFlowSolver s(match_cost_matrix, l_nodes, r_nodes, {}, unlink_limits,
+                {}, machine_filament_capacity, remaining_group_capacity());
             ungrouped_filaments = optimize_map_to_machine_filament(s.solve(), l_nodes, r_nodes, group);
             if (ungrouped_filaments.empty())
                 return group;
@@ -1281,13 +1303,21 @@ namespace Slic3r
         // remove all limits
         {
             l_nodes = ungrouped_filaments;
-            MatchModeGroupSolver s(match_cost_matrix, l_nodes, r_nodes, machine_filament_capacity, {});
+            MinFlushFlowSolver s(match_cost_matrix, l_nodes, r_nodes, {}, {},
+                {}, machine_filament_capacity, remaining_group_capacity());
             auto ret = optimize_map_to_machine_filament(s.solve(), l_nodes, r_nodes, group);
-            for (size_t idx = 0; idx < ret.size(); ++idx) {
-                if (ret[idx] == MaxFlowGraph::INVALID_ID)
-                    assert(false);
-                else
-                    group[used_filaments[l_nodes[idx]]] = machine_filament_list[r_nodes[ret[idx]]].extruder_id;
+            // An extruder can have capacity but no reported AMS slots. These
+            // are unmatched project-filament IDs, not right-node indices.
+            for (int filament : ret) {
+                int extruder = ctx.machine_info.master_extruder_id;
+                for (std::size_t candidate = 0; candidate < ctx.machine_info.max_group_size.size(); ++candidate) {
+                    if (extruder_filament_count[candidate] < ctx.machine_info.max_group_size[candidate]) {
+                        extruder = static_cast<int>(candidate);
+                        if (is_extruder_filament_compatible(filament, extruder)) break;
+                    }
+                }
+                group[used_filaments[filament]] = extruder;
+                ++extruder_filament_count[extruder];
             }
         }
 

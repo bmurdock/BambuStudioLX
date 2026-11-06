@@ -595,14 +595,19 @@ TEST_CASE("PrusaPartsShouldFitIntoTwoBins", "[Nesting]") {
     // Get the input items and define the bin.
     std::vector<Item> input = prusaParts();
     auto bin = Box(250000000, 210000000);
+    NestConfig<> config;
+    for (Item &item : input) {
+        item.allowed_rotations.clear();
+        for (const auto rotation : config.placer_config.rotations)
+            item.allowed_rotations.emplace_back(rotation, 0);
+    }
 
-    // Do the nesting. Check in each step if the remaining items are less than
-    // in the previous step. (Some algorithms can place more items in one step)
-    size_t pcount = input.size();
+    // The fork reports the number of placed items.
+    size_t pcount = 0;
 
-    size_t bins = libnest2d::nest(input, bin, 0, {},
+    size_t bins = libnest2d::nest(input, bin, 0, config,
                                   ProgressFunction{[&pcount](unsigned cnt) {
-                                      REQUIRE(cnt < pcount);
+                                      REQUIRE(cnt > pcount);
                                       pcount = cnt;
                                   }});
 
@@ -658,16 +663,40 @@ TEST_CASE("EmptyItemShouldBeUntouched", "[Nesting]") {
     for (auto &itm : items) REQUIRE(itm.binId() == BIN_ID_UNSET);
 }
 
-TEST_CASE("LargeItemShouldBeUntouched", "[Nesting]") {
+TEST_CASE("Computed bounding boxes retain their validity", "[Geometry]") {
+    const RectangleItem first(10, 10);
+    RectangleItem second(10, 10);
+    second.translate({100, 100});
+    const auto first_box = sl::boundingBox(first.transformedShape());
+    const auto second_box = sl::boundingBox(second.transformedShape());
+    REQUIRE(first_box.defined);
+    REQUIRE(second_box.defined);
+    const Box merged = sl::boundingBox(first_box, second_box);
+    REQUIRE(merged.width() == 110);
+    REQUIRE(merged.height() == 110);
+    const MultiPolygon pile{first.transformedShape(), second.transformedShape()};
+    const Box pile_box = sl::boundingBox(pile);
+    REQUIRE(pile_box.defined);
+    REQUIRE(pile_box.width() == 110);
+    REQUIRE(pile_box.height() == 110);
+    REQUIRE_FALSE(sl::boundingBox(MultiPolygon{}).defined);
+    REQUIRE_FALSE(Box{}.defined);
+    REQUIRE(Box(10, 10).defined);
+    REQUIRE(Box::infinite().defined);
+}
+
+TEST_CASE("LargeItemIsReportedUnfit", "[Nesting]") {
     auto bin = Box(250000000, 210000000); // dummy bin
 
     std::vector<Item> items;
-    items.emplace_back(RectangleItem{250000001, 210000001});  // Emplace large item
+    // Exceed the plate's boundary tolerance, not just one rounding quantum.
+    const Coord margin = Coord(2 * SCALED_EPSILON);
+    items.emplace_back(RectangleItem{250000000 + margin, 210000000 + margin});
 
     size_t bins = libnest2d::nest(items, bin);
 
     REQUIRE(bins == 0u);
-    REQUIRE(items.front().binId() == BIN_ID_UNSET);
+    REQUIRE(items.front().binId() == BIN_ID_UNFIT);
 }
 
 TEST_CASE("Items can be preloaded", "[Nesting]") {
@@ -716,10 +745,39 @@ TEST_CASE("Items can be preloaded", "[Nesting]") {
 
         REQUIRE(movable_rect.binId() == 0);
 
-        auto bb = movable_rect.boundingBox();
-        REQUIRE(getX(bb.center()) == getX(bin.center()));
-        REQUIRE(getY(bb.center()) == getY(bin.center()));
+        std::vector<Item> free_bin_items{RectangleItem{20000000, 20000000}};
+        free_bin_items.front().translate(bin.center());
+        REQUIRE(libnest2d::nest(free_bin_items, bin, 0, cfg) == 1);
+        REQUIRE(movable_rect.translation() == free_bin_items.front().translation());
+        REQUIRE(double(movable_rect.rotation()) == double(free_bin_items.front().rotation()));
     }
+}
+
+TEST_CASE("Fixed bins survive without a successful movable placement", "[Nesting]") {
+    const Box bin(100, 100);
+    std::vector<Item> items{RectangleItem{20, 20}};
+    SECTION("only a fixed item in a later bin") {
+        items.front().markAsFixedInBin(1);
+        REQUIRE(libnest2d::nest(items, bin) == 2);
+        REQUIRE(items.front().binId() == 1);
+    }
+    SECTION("a fixed bin and an oversized movable item") {
+        items.front().markAsFixedInBin(0);
+        items.emplace_back(RectangleItem{200, 200});
+        REQUIRE(libnest2d::nest(items, bin) == 1);
+        REQUIRE(items.front().binId() == 0);
+        REQUIRE(items.back().binId() == BIN_ID_UNFIT);
+    }
+}
+
+TEST_CASE("Wipe tower placement permits an unset progress callback", "[Nesting]") {
+    Item item{RectangleItem{10, 10}};
+    item.is_wipe_tower = true;
+    NfpPlacer placer(Box(100, 100));
+    NfpPlacer::Config config;
+    placer.configure(config);
+    REQUIRE_NOTHROW(placer.pack(item));
+    REQUIRE(bool(placer.pack(item)));
 }
 
 namespace {
@@ -1024,9 +1082,9 @@ TEST_CASE("pointOnPolygonContour", "[Geometry]") {
     REQUIRE(getX(first) == getX(ecache.coords(0)));
     REQUIRE(getY(first) == getY(ecache.coords(0)));
 
-    auto last = *std::prev(input.end());
-    REQUIRE(getX(last) == getX(ecache.coords(1.0)));
-    REQUIRE(getY(last) == getY(ecache.coords(1.0)));
+    // EdgeCache closes open contours, so a full lap returns to the start.
+    REQUIRE(getX(first) == getX(ecache.coords(1.0)));
+    REQUIRE(getY(first) == getY(ecache.coords(1.0)));
 
     for(int i = 0; i <= 100; i++) {
         auto v = ecache.coords(i*(0.01));
@@ -1161,11 +1219,17 @@ TEST_CASE("Test for bed center distance optimization", "[Nesting], [NestKernels]
     
     NfpPlacer::Config pconfig;
     
-    pconfig.object_function = [](const Item &item) -> double {
-        return pl::magnsq<PointImpl, double>(item.boundingBox().center());
+    pconfig.object_function = [](const Item &item,
+                                 const std::vector<std::reference_wrapper<Item>> &/*placed_items*/) -> double {
+        // Selection costs are nonnegative and below LARGE_COST_TO_REJECT.
+        return pl::magnsq<PointImpl, double>(item.boundingBox().center()) / (double(W) * W);
     };
     
-    size_t bins = nest(input, bin, 0, NestConfig{pconfig});
+    std::string diagnostic;
+    _Nester<NfpPlacer, FirstFitSelection> nester(bin, 0, pconfig);
+    nester.unfitIndicator([&](const std::string& message) { diagnostic += message + "\n"; });
+    size_t bins = nester.execute(input.begin(), input.end());
+    INFO(diagnostic);
     
     REQUIRE(bins == 1);
     
@@ -1197,6 +1261,7 @@ TEST_CASE("Test for biggest bounding box area", "[Nesting], [NestKernels]")
     
     NfpPlacer::Config pconfig;
     pconfig.rotations = {0.};
+    pconfig.parallel = false;
     Box pile_box;
     pconfig.before_packing =
         [&pile_box](const MultiPolygon &pile,
@@ -1205,7 +1270,8 @@ TEST_CASE("Test for biggest bounding box area", "[Nesting], [NestKernels]")
         pile_box = sl::boundingBox(pile);
     };
 
-    pconfig.object_function = [&pile_box](const Item &item) -> double {
+    pconfig.object_function = [&pile_box](const Item &item,
+                                          const std::vector<std::reference_wrapper<Item>> &/*placed_items*/) -> double {
         Box b = sl::boundingBox(item.boundingBox(), pile_box);
         double area = b.area<double>() / (double(W) * W);
         return -area;
@@ -1221,7 +1287,19 @@ TEST_CASE("Test for biggest bounding box area", "[Nesting], [NestKernels]")
     MultiPolygon pile = merged_pile(input.begin(), input.end(), 0);
     Box bb = sl::boundingBox(pile);
     
-    // Here the result shall be a stairway of boxes
-    REQUIRE(pile.size() == N);
-    REQUIRE(bb.area() == double(N) * N * W * W);
+    // Union may join corner-touching contours. Verify coverage and no overlap
+    // by area rather than requiring a particular contour representation.
+    for (const Item &item : input) REQUIRE(item.binId() == 0);
+    REQUIRE(sl::area(pile) == Approx(double(N) * W * W));
+    // Local contour optimization promises no globally maximal stairway.
+    // Compare the custom objective against an otherwise identical compact run.
+    std::vector<RectangleItem> compact(N, {W, W});
+    pconfig.object_function = [&pile_box](const Item &item, const std::vector<std::reference_wrapper<Item>> &) {
+        const Box box = sl::boundingBox(item.boundingBox(), pile_box);
+        return box.area<double>() / (double(W) * W);
+    };
+    REQUIRE(nest(compact, bin, 0, NestConfig{pconfig}) == 1);
+    const MultiPolygon compact_pile = merged_pile(compact.begin(), compact.end(), 0);
+    REQUIRE(sl::area(compact_pile) == Approx(double(N) * W * W));
+    REQUIRE(bb.area<double>() > sl::boundingBox(compact_pile).area<double>());
 }

@@ -829,8 +829,15 @@ protected:
                 m_keys.emplace_back(kvp.first);
                 const ConfigOptionDef *def = defs->get(kvp.first);
                 assert(def != nullptr);
-                if (def->default_value)
-                    opt->set(def->default_value.get());
+                if (def->default_value) {
+                    if (def->type == coEnums) {
+                        // The registered vector default only stores values.
+                        // Its factory also binds the definition's name map.
+                        const std::unique_ptr<ConfigOption> value(def->create_default_option());
+                        opt->set(value.get());
+                    } else
+                        opt->set(def->default_value.get());
+                }
             }
         }
 

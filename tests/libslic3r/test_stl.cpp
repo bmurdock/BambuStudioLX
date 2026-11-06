@@ -1,6 +1,14 @@
 #include <catch2/catch.hpp>
+#include <boost/filesystem.hpp>
+#include <vector>
+
+#if defined(__APPLE__) || defined(__linux__)
+#include <csignal>
+#include <sys/resource.h>
+#endif
 
 #include "libslic3r/Model.hpp"
+#include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/Format/STL.hpp"
 
 using namespace Slic3r;
@@ -9,6 +17,57 @@ static inline std::string stl_path(const char* path)
 {
 	return std::string(TEST_DATA_DIR) + "/test_stl/" + path;
 }
+
+#if defined(__APPLE__) || defined(__linux__)
+struct ScopedFileSizeLimit
+{
+	struct rlimit previous_limit{};
+	struct sigaction previous_action{};
+	bool active{false};
+
+	bool enable()
+	{
+		if (getrlimit(RLIMIT_FSIZE, &previous_limit) != 0 ||
+			sigaction(SIGXFSZ, nullptr, &previous_action) != 0)
+			return false;
+
+		struct sigaction ignored{};
+		sigemptyset(&ignored.sa_mask);
+		ignored.sa_handler = SIG_IGN;
+		if (sigaction(SIGXFSZ, &ignored, nullptr) != 0)
+			return false;
+
+		struct rlimit limited = previous_limit;
+		limited.rlim_cur = 0;
+		if (setrlimit(RLIMIT_FSIZE, &limited) != 0) {
+			sigaction(SIGXFSZ, &previous_action, nullptr);
+			return false;
+		}
+		active = true;
+		return true;
+	}
+
+	~ScopedFileSizeLimit()
+	{
+		if (!active)
+			return;
+		setrlimit(RLIMIT_FSIZE, &previous_limit);
+		sigaction(SIGXFSZ, &previous_action, nullptr);
+	}
+};
+
+struct ScopedTempFiles
+{
+	std::vector<boost::filesystem::path> paths;
+
+	~ScopedTempFiles()
+	{
+		boost::system::error_code ec;
+		for (const auto &path : paths)
+			boost::filesystem::remove(path, ec);
+	}
+};
+#endif
 
 SCENARIO("Reading an STL file", "[stl]") {
 	GIVEN("umlauts in the path of a binary STL file, Czech characters in the file name") {
@@ -54,4 +113,39 @@ SCENARIO("Reading an STL file", "[stl]") {
 			}
 		}
 	}
+}
+
+SCENARIO("Writing an STL file reports output failures", "[stl]") {
+	Slic3r::TriangleMesh mesh;
+
+	GIVEN("a path whose parent directory does not exist") {
+		const boost::filesystem::path output = boost::filesystem::temp_directory_path() /
+			boost::filesystem::unique_path("stl-write-failure-%%%%%%") / "output.stl";
+		THEN("both STL formats report the open failure") {
+			REQUIRE_FALSE(Slic3r::store_stl(output.string().c_str(), &mesh, false));
+			REQUIRE_FALSE(Slic3r::store_stl(output.string().c_str(), &mesh, true));
+		}
+	}
+
+#if defined(__APPLE__) || defined(__linux__)
+	GIVEN("a zero POSIX file-size limit") {
+		ScopedFileSizeLimit file_size_limit;
+		if (!file_size_limit.enable()) {
+			WARN("RLIMIT_FSIZE or SIGXFSZ is unavailable");
+			return;
+		}
+
+		ScopedTempFiles temp_files;
+		const boost::filesystem::path ascii_output = boost::filesystem::temp_directory_path() /
+			boost::filesystem::unique_path("stl-write-limit-%%%%%%.stl");
+		const boost::filesystem::path binary_output = boost::filesystem::temp_directory_path() /
+			boost::filesystem::unique_path("stl-write-limit-%%%%%%.stl");
+		temp_files.paths = { ascii_output, binary_output };
+
+		THEN("both STL formats report the write failure") {
+			REQUIRE_FALSE(Slic3r::store_stl(ascii_output.string().c_str(), &mesh, false));
+			REQUIRE_FALSE(Slic3r::store_stl(binary_output.string().c_str(), &mesh, true));
+		}
+	}
+#endif
 }

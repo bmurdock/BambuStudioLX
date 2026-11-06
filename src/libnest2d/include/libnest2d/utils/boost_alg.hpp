@@ -400,6 +400,7 @@ inline bp2d::Box boundingBox(const PathImpl& sh, const PathTag&)
 {
     bp2d::Box b;
     boost::geometry::envelope(sh, b);
+    b.defined = !sh.empty();
     return b;
 }
 
@@ -409,6 +410,7 @@ inline bp2d::Box boundingBox<bp2d::Shapes>(const bp2d::Shapes& shapes,
 {
     bp2d::Box b;
     boost::geometry::envelope(shapes, b);
+    b.defined = std::any_of(shapes.begin(), shapes.end(), [](const auto &shape) { return !shape.empty(); });
     return b;
 }
 #endif

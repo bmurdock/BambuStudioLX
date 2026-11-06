@@ -8,6 +8,7 @@
 
 #include "WxFontUtils.hpp"
 #include "slic3r/GUI/3DScene.hpp" // ::glsafe
+#include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/Jobs/CreateFontStyleImagesJob.hpp"
 #include "slic3r/GUI/Jobs/CreateFontNameImageJob.hpp"
 #include "slic3r/GUI/ImGuiWrapper.hpp" // check of font ranges
@@ -374,11 +375,9 @@ void StyleManager::init_trunc_names(float max_width) {
 }
 
 // for access to worker
-#include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/Plater.hpp"
 
 // for get DPI
-#include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/Gizmos/GizmoObjectManipulation.hpp"
 

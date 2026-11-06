@@ -1,6 +1,7 @@
 #include "BitmapCache.hpp"
 
 #include "libslic3r/Utils.hpp"
+#include "libslic3r/NSVGUtils.hpp"
 #include "../Utils/MacDarkMode.hpp"
 #include "GUI.hpp"
 #include "GUI_Utils.hpp"
@@ -16,7 +17,6 @@
     #include <wx/rawbmp.h>
 #endif /* __WXGTK2__ */
 #include <GL/glew.h>
-#define NANOSVG_IMPLEMENTATION
 #include "nanosvg/nanosvg.h"
 #define NANOSVGRAST_IMPLEMENTATION
 #include "nanosvg/nanosvgrast.h"
@@ -309,12 +309,12 @@ NSVGimage* BitmapCache::nsvgParseFromFileWithReplace(const char* filename, const
     fclose(fp);
 
     if (replaces.empty())
-        image = nsvgParse(data, units, dpi);
+        image = ::nsvgParse(data, units, dpi);
     else {
         str.assign(data);
         for (auto val : replaces)
             boost::replace_all(str, val.first, val.second);
-        image = nsvgParse(str.data(), units, dpi);
+        image = ::nsvgParse(str.data(), units, dpi);
     }
     free(data);
     return image;
@@ -570,14 +570,14 @@ bool BitmapCache::parse_color4(const std::string& scolor, unsigned char* rgba_ou
 //BBS Replace svg green with the specified colour
 bool BitmapCache::load_from_svg_file_change_color(const std::string &filename, unsigned width, unsigned height, ImTextureID &texture_id, const char *hexColor)
 {
-    NSVGimage* image = nsvgParseFromFile(filename.c_str(), "px", 96.0f);
+    NSVGimage* image = ::nsvgParseFromFile(filename.c_str(), "px", 96.0f);
     if (image == nullptr) {
         return false;
     }
     char temp_color[8];
     strncpy(temp_color, hexColor, 7);
     temp_color[7]             = '\0';
-    unsigned int change_color = nsvg__parseColorHex(temp_color);
+    unsigned int change_color = Slic3r::nsvgParseColorHex(temp_color);
     change_color |= (unsigned int) (1.0f * 255) << 24; // opacity
     unsigned int green_color = 4282560000;
     for (NSVGshape* shape = image->shapes; shape != nullptr; shape = shape->next) {

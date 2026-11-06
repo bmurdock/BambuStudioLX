@@ -6,6 +6,7 @@
 #include "libslic3r/Polyline.hpp"
 #include "libslic3r/Line.hpp"
 #include "libslic3r/Geometry.hpp"
+#include "libslic3r/Arrange.hpp"
 #include "libslic3r/Geometry/Circle.hpp"
 #include "libslic3r/Geometry/ConvexHull.hpp"
 #include "libslic3r/ClipperUtils.hpp"
@@ -14,6 +15,24 @@
 //#include <random>
 //#include "libnest2d/tools/benchmark.h"
 #include "libslic3r/SVG.hpp"
+
+TEST_CASE("Arrangement preserves input mapping around invalid contours", "[Arrange]") {
+    using namespace Slic3r;
+    using namespace Slic3r::arrangement;
+    ArrangePolygons input(2);
+    SECTION("an empty contour precedes a valid object") {}
+    SECTION("a zero-area contour precedes a valid object") {
+        input[0].poly.contour.points = {Point::new_scale(0, 0), Point::new_scale(1, 1), Point::new_scale(2, 2)};
+    }
+    input[1].poly.contour.points = {Point::new_scale(0, 0), Point::new_scale(10, 0),
+        Point::new_scale(10, 10), Point::new_scale(0, 10)};
+    const BoundingBox bed(Point::new_scale(0, 0), Point::new_scale(100, 100));
+    arrange(input, {}, bed, ArrangeParams{});
+    REQUIRE_FALSE(input[0].is_arranged());
+    REQUIRE(input[0].bed_idx == UNARRANGED);
+    REQUIRE(input[1].is_arranged());
+    REQUIRE(input[1].bed_idx == 0);
+}
 
 #include "../libnest2d/printer_parts.hpp"
 
@@ -374,6 +393,7 @@ SCENARIO("Line distances", "[Geometry]"){
 }
 
 SCENARIO("Polygon convex/concave detection", "[Geometry]"){
+    // The public API thresholds the turn between incoming and outgoing edges.
     GIVEN(("A Square with dimension 100")){
         auto square = Slic3r::Polygon /*new_scale*/(std::vector<Point>({
             Point(100,100),
@@ -381,13 +401,13 @@ SCENARIO("Polygon convex/concave detection", "[Geometry]"){
             Point(200,200),
             Point(100,200)}));
         THEN("It has 4 convex points counterclockwise"){
-            REQUIRE(square.concave_points(PI*4/3).size() == 0);
-            REQUIRE(square.convex_points(PI*2/3).size() == 4);
+            REQUIRE(square.concave_points(PI/3).size() == 0);
+            REQUIRE(square.convex_points(PI/3).size() == 4);
         }
         THEN("It has 4 concave points clockwise"){
             square.make_clockwise();
-            REQUIRE(square.concave_points(PI*4/3).size() == 4);
-            REQUIRE(square.convex_points(PI*2/3).size() == 0);
+            REQUIRE(square.concave_points(PI/3).size() == 4);
+            REQUIRE(square.convex_points(PI/3).size() == 0);
         }
     }
     GIVEN("A Square with an extra colinearvertex"){
@@ -398,8 +418,8 @@ SCENARIO("Polygon convex/concave detection", "[Geometry]"){
             Point(100,200),
             Point(100,100)}));
         THEN("It has 4 convex points counterclockwise"){
-            REQUIRE(square.concave_points(PI*4/3).size() == 0);
-            REQUIRE(square.convex_points(PI*2/3).size() == 4);
+            REQUIRE(square.concave_points(PI/3).size() == 0);
+            REQUIRE(square.convex_points(PI/3).size() == 4);
         }
     }
     GIVEN("A Square with an extra collinear vertex in different order"){
@@ -410,8 +430,8 @@ SCENARIO("Polygon convex/concave detection", "[Geometry]"){
             Point(150,100),
             Point(200,100)}));
         THEN("It has 4 convex points counterclockwise"){
-            REQUIRE(square.concave_points(PI*4/3).size() == 0);
-            REQUIRE(square.convex_points(PI*2/3).size() == 4);
+            REQUIRE(square.concave_points(PI/3).size() == 0);
+            REQUIRE(square.convex_points(PI/3).size() == 4);
         }
     }
 
@@ -422,8 +442,8 @@ SCENARIO("Polygon convex/concave detection", "[Geometry]"){
             Point(31286371,461008)
         }));
         THEN("it has three convex vertices"){
-            REQUIRE(triangle.concave_points(PI*4/3).size() == 0);
-            REQUIRE(triangle.convex_points(PI*2/3).size() == 3);
+            REQUIRE(triangle.concave_points(PI/3).size() == 0);
+            REQUIRE(triangle.convex_points(PI/3).size() == 3);
         }
     }
 
@@ -435,13 +455,13 @@ SCENARIO("Polygon convex/concave detection", "[Geometry]"){
             Point(31286371,461012)
         }));
         THEN("it has three convex vertices"){
-            REQUIRE(triangle.concave_points(PI*4/3).size() == 0);
-            REQUIRE(triangle.convex_points(PI*2/3).size() == 3);
+            REQUIRE(triangle.concave_points(PI/3).size() == 0);
+            REQUIRE(triangle.convex_points(PI/3).size() == 3);
         }
     }
     GIVEN("A polygon with concave vertices with angles of specifically 4/3pi"){
-        // Two concave vertices of this polygon have angle = PI*4/3, so this test fails
-        // if epsilon is not used.
+        // Thresholds use the exterior turn angle. These integer vertices
+        // approximate 60-degree turns, so allow their quantization error.
         auto polygon = Slic3r::Polygon(std::vector<Point>({
             Point(60246458,14802768),Point(64477191,12360001),
             Point(63727343,11060995),Point(64086449,10853608),
@@ -453,8 +473,8 @@ SCENARIO("Polygon convex/concave detection", "[Geometry]"){
             Point(38092663,692699),Point(52100125,692699)
         }));
         THEN("the correct number of points are detected"){
-            REQUIRE(polygon.concave_points(PI*4/3).size() == 6);
-            REQUIRE(polygon.convex_points(PI*2/3).size() == 10);
+            REQUIRE(polygon.concave_points(PI/3 - 1e-5).size() == 6);
+            REQUIRE(polygon.convex_points(PI/3 - 1e-5).size() == 10);
         }
     }
 }
