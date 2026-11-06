@@ -22,6 +22,12 @@
 set(_OMC_DIR "${CMAKE_CURRENT_LIST_DIR}")
 set(_OMC_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/omc_gen")
 file(MAKE_DIRECTORY "${_OMC_GEN_DIR}")
+set(_OMC_PATCH_COMMAND git apply)
+set(_OMC_PATCH_DIRECTORY "")
+if(IN_GIT_REPO)
+  set(_OMC_PATCH_COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR}/.. git apply)
+  set(_OMC_PATCH_DIRECTORY --directory ${BINARY_DIR_REL}/dep_OpenMeshCraft-prefix/src/dep_OpenMeshCraft)
+endif()
 
 # ---- prepare_source.cmake: fill zip submodule placeholders (+ fmt) ----
 file(WRITE "${_OMC_GEN_DIR}/prepare_source.cmake" [=[
@@ -264,7 +270,7 @@ bambustudio_add_cmake_project(OpenMeshCraft
   URL https://github.com/bambulab/OpenMeshCraft/archive/0e8d12c3df54804393593ab5d86c05caa340cbee.zip
   URL_HASH SHA256=632CD806CE932D6A1D76DF0E86ECF8BFC22480E76F80A638A28474F5262E2B9E
   ${_OMC_DEPENDS}
-  PATCH_COMMAND git apply --verbose ${_OMC_DIR}/0001-fix-msvc-arm64.patch
+  PATCH_COMMAND ${_OMC_PATCH_COMMAND} ${_OMC_PATCH_DIRECTORY} --verbose ${_OMC_DIR}/0001-fix-msvc-arm64.patch
   COMMAND ${CMAKE_COMMAND}
     -DOMC_SOURCE_DIR=<SOURCE_DIR>
     -P ${_OMC_GEN_DIR}/prepare_source.cmake
