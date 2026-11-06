@@ -17,7 +17,7 @@
 # (eigen / parallel-hashmap / oneTBB) and vendors {fmt} for GCC9 / old Apple libc++.
 # Linux/mac/AVX compatibility lives in the fetched OpenMeshCraft zip
 # (bambulab/OpenMeshCraft @0e8d12c3, merged PR #2 OMC::format);
-# do not mutate unzipped .h/.cpp here.
+# The local MSVC ARM64 patch fixes the label intrinsic and Windows header scope.
 
 set(_OMC_DIR "${CMAKE_CURRENT_LIST_DIR}")
 set(_OMC_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/omc_gen")
@@ -264,7 +264,8 @@ bambustudio_add_cmake_project(OpenMeshCraft
   URL https://github.com/bambulab/OpenMeshCraft/archive/0e8d12c3df54804393593ab5d86c05caa340cbee.zip
   URL_HASH SHA256=632CD806CE932D6A1D76DF0E86ECF8BFC22480E76F80A638A28474F5262E2B9E
   ${_OMC_DEPENDS}
-  PATCH_COMMAND ${CMAKE_COMMAND}
+  PATCH_COMMAND git apply --verbose ${_OMC_DIR}/0001-fix-msvc-arm64.patch
+  COMMAND ${CMAKE_COMMAND}
     -DOMC_SOURCE_DIR=<SOURCE_DIR>
     -P ${_OMC_GEN_DIR}/prepare_source.cmake
   COMMAND ${CMAKE_COMMAND} -E copy

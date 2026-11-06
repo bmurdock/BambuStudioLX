@@ -1,0 +1,42 @@
+diff --git a/src/OpenMeshCraft/Utils/Label.h b/src/OpenMeshCraft/Utils/Label.h
+index 370084b..0f79f5c 100644
+--- a/src/OpenMeshCraft/Utils/Label.h
++++ b/src/OpenMeshCraft/Utils/Label.h
+@@ -4,4 +4,7 @@
+
+ #include <bitset>
++#ifdef _MSC_VER
++  #include <bit>
++#endif
+
+ namespace OMC {
+@@ -21,5 +24,5 @@ inline size_t LabelToIdx(const Label &b)
+ #endif
+ #ifdef _MSC_VER
+-  return 32 - __lzcnt(x) - 1; // Visual studio
++  return 32 - std::countl_zero(x) - 1; // MSVC, including ARM64
+ #endif
+ }
+diff --git a/src/OpenMeshCraft/Utils/Logger.cpp b/src/OpenMeshCraft/Utils/Logger.cpp
+index 03a72ba..860b0d3 100644
+--- a/src/OpenMeshCraft/Utils/Logger.cpp
++++ b/src/OpenMeshCraft/Utils/Logger.cpp
+@@ -3,4 +3,9 @@
+ #include <iostream>
+
++#ifdef _MSC_VER
++  #include <windows.h>
++  #include <psapi.h>
++#endif
++
+ namespace OMC {
+
+@@ -56,8 +61,4 @@ Logger::elapsed(const std::chrono::steady_clock::time_point &last)
+ #ifdef _MSC_VER
+
+-  #include <windows.h>
+-
+-  #include <psapi.h>
+-
+ // To ensure correct resolution of symbols, add Psapi.lib to TARGETLIBS
+ // and compile with -DPSAPI_VERSION=1
