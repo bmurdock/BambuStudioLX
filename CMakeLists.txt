@@ -597,7 +597,13 @@ include_directories(BEFORE SYSTEM ${EIGEN3_INCLUDE_DIR})
 # Find expat or use bundled version
 # Always use the system libexpat on Linux.
 
+if(MSVC AND SLIC3R_STATIC)
+    set(EXPAT_USE_STATIC_LIBS ON)
+endif()
 find_package(EXPAT)
+if(EXPAT_FOUND AND TARGET EXPAT::EXPAT)
+    set(EXPAT_LIBRARIES EXPAT::EXPAT)
+endif()
 
 if (NOT EXPAT_FOUND)
     add_library(expat STATIC
