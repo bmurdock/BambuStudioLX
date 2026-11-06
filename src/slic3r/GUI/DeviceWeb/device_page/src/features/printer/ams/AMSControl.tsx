@@ -182,7 +182,7 @@ function NozzleExtruderDialog({
           onPointerDownOutside={(e) => e.preventDefault()}
           onFocusOutside={(e) => e.preventDefault()}
           onOpenAutoFocus={(e) => { e.preventDefault(); panelRef.current?.focus() }}
-          ref={panelRef as any}
+          ref={panelRef}
           className={cn(
             'absolute left-0 top-0 z-[1000]',
             'w-[34.125rem] min-h-[20.8125rem]', // 546 x 333（高度自适应）

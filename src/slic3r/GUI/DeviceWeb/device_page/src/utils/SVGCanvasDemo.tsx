@@ -8,7 +8,7 @@ export default function SvgCanvasDemo() {
   // Canvas 动画：画一个进度圆圈
   useEffect(() => {
     let running = true;
-    let start = Date.now();
+    const start = Date.now();
     const draw = () => {
       if (!canvasRef.current) return;
       const ctx = canvasRef.current.getContext("2d");

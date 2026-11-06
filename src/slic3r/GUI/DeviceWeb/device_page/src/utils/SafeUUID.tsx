@@ -1,5 +1,5 @@
 export function safeRandomUUID(): string {
-  const g: any = globalThis.crypto || (globalThis as any).msCrypto;
+  const g = globalThis.crypto;
 
   if (g?.randomUUID) return g.randomUUID();
 

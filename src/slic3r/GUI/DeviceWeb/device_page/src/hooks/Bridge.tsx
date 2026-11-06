@@ -1,5 +1,6 @@
 import { useRef, useCallback, useEffect } from 'react';
 import useStore from '../store/AppStore';
+import { allocateDeviceSequence } from './DeviceSequence';
 
 const DEVICE_WEB_SDK_VERSION = '1.0';
 
@@ -14,7 +15,7 @@ export interface Header {
     ts: number; // ms
 }
 
-interface Packet<T = any> { head: Header; body: T; }
+interface Packet<T = unknown> { head: Header; body: T; }
 
 type TraceDirection = 'web_request' | 'cpp_response' | 'cpp_report';
 
@@ -31,12 +32,14 @@ type DeviceWebHealth = Readonly<{
 }>;
 
 type DeviceWebDebugWindow = Window & {
+    chrome?: { webview?: { postMessage: (message: string) => void } };
+    webkit?: { messageHandlers?: { wx?: { postMessage: (message: string) => void } } };
+    __internalBuild?: boolean;
     __deviceWebTrace?: DeviceWebTraceEntry[];
     __bambuWebViewHealth?: DeviceWebHealth;
 };
 
 let reportedHealthPageInstanceId: string | undefined;
-let healthSequence = 0;
 
 function appendDeviceWebTrace(direction: TraceDirection, head: Header, body: unknown) {
     const debugWindow = window as DeviceWebDebugWindow;
@@ -74,14 +77,15 @@ function rawSend(pkt: unknown) {
     }
 
     // Edge-WebView2 (Windows)
-    if (typeof (window as any).chrome?.webview?.postMessage === 'function') {
-        (window as any).chrome.webview.postMessage(str);
+    const debugWindow = window as DeviceWebDebugWindow;
+    if (typeof debugWindow.chrome?.webview?.postMessage === 'function') {
+        debugWindow.chrome.webview.postMessage(str);
         return;
     }
 
     // WKWebView (macOS) — handler registered as "wx" via AddScriptMessageHandler.
-    if (typeof (window as any).webkit?.messageHandlers?.wx?.postMessage === 'function') {
-        (window as any).webkit.messageHandlers.wx.postMessage(str);
+    if (typeof debugWindow.webkit?.messageHandlers?.wx?.postMessage === 'function') {
+        debugWindow.webkit.messageHandlers.wx.postMessage(str);
         return;
     }
 
@@ -92,7 +96,9 @@ function rawSend(pkt: unknown) {
     frame.style.display = 'none';
     frame.src = 'app://' + encodeURIComponent(str);
     document.body.appendChild(frame);
-    setTimeout(() => { try { document.body.removeChild(frame); } catch {} }, 200);
+    setTimeout(() => {
+        try { document.body.removeChild(frame); } catch { /* already removed */ }
+    }, 200);
 }
 
 function rawSendCallback<T>(head: Header, body?: T) {
@@ -107,7 +113,7 @@ export function reportDeviceHealthReady(): void {
         const documentUrl = String(window.location.href).slice(0, 2048);
         for (const action of ['boot', 'ready'] as const) {
             rawSendCallback(
-                { version: DEVICE_WEB_SDK_VERSION, type: 'request', seq: healthSequence++, ts: Date.now() },
+                { version: DEVICE_WEB_SDK_VERSION, type: 'request', seq: allocateDeviceSequence(), ts: Date.now() },
                 {
                     module: 'device_host',
                     submod: 'health',
@@ -139,9 +145,8 @@ function validateHeader(pkt: Packet) {
 }
 
 export function useDeviceBridge() {
-    const sequence = useRef(0);
     const pending  = useRef(new Map<number, {
-        resolve: (r: any) => void;
+        resolve: (r: Result<unknown>) => void;
         timer: ReturnType<typeof setTimeout>;
         marksReady: boolean;
     }>());
@@ -149,8 +154,8 @@ export function useDeviceBridge() {
     const send = useSendToCpp();
 
     const request = useCallback(
-        <P = any, R = any>(params?: P, timeoutMs = 5000): Promise<Result<R>> => {
-            const seq = sequence.current++;
+        <P = unknown, R = unknown>(params?: P, timeoutMs = 5000): Promise<Result<R>> => {
+            const seq = allocateDeviceSequence();
             const debugState = useStore.getState().filament;
 
             const head: Header = {
@@ -171,21 +176,35 @@ export function useDeviceBridge() {
                     detail: reqBody,
                 });
             }
-            send(head, params ?? {});
-
             return new Promise<Result<R>>(resolve => {
                 const timer = setTimeout(() => {
                     pending.current.delete(seq);
                     resolve({ ok: false, error: 'Request Timeout' });
                 }, timeoutMs);
 
-                pending.current.set(seq, { resolve, timer, marksReady: marksHealthReady(reqBody) });
+                pending.current.set(seq, {
+                    resolve: resolve as (r: Result<unknown>) => void,
+                    timer,
+                    marksReady: marksHealthReady(reqBody),
+                });
+
+                try {
+                    send(head, params ?? {});
+                } catch (error) {
+                    clearTimeout(timer);
+                    pending.current.delete(seq);
+                    resolve({
+                        ok: false,
+                        error: error instanceof Error ? error.message : String(error),
+                    });
+                }
             });
         },
         [send]
     );
 
     useEffect(() => {
+        const pendingRequests = pending.current;
         const handler = (e: Event) => {
             const pkt = (e as CustomEvent<Packet>).detail;
             if (!validateHeader(pkt)) return;
@@ -222,8 +241,11 @@ export function useDeviceBridge() {
         document.addEventListener('cpp:device', handler);
         return () => {
             document.removeEventListener('cpp:device', handler);
-            pending.current.forEach(entry => clearTimeout(entry.timer));
-            pending.current.clear();
+            pendingRequests.forEach(entry => {
+                clearTimeout(entry.timer);
+                entry.resolve({ ok: false, error: 'Request Canceled' });
+            });
+            pendingRequests.clear();
         };
     }, [send]);
 

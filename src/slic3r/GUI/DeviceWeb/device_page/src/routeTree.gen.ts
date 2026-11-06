@@ -8,134 +8,72 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-// Import Routes
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as AboutRouteImport } from './routes/about'
+import { Route as AppRouteImport } from './routes/app'
+import { Route as Filament_managerRouteImport } from './routes/filament_manager'
+import { Route as Device_pageAms_control_webRouteImport } from './routes/device_page/ams_control_web'
+import { Route as Device_pageAms_control_web_debugRouteImport } from './routes/device_page/ams_control_web_debug'
 
-import { Route as rootRoute } from './routes/__root'
-import { Route as FilamentmanagerImport } from './routes/filament_manager'
-import { Route as AppImport } from './routes/app'
-import { Route as AboutImport } from './routes/about'
-import { Route as IndexImport } from './routes/index'
-import { Route as DevicepageAmscontrolwebdebugImport } from './routes/device_page/ams_control_web_debug'
-import { Route as DevicepageAmscontrolwebImport } from './routes/device_page/ams_control_web'
-
-// Create/Update Routes
-
-const FilamentmanagerRoute = FilamentmanagerImport.update({
-  id: '/filament_manager',
-  path: '/filament_manager',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const AppRoute = AppImport.update({
-  id: '/app',
-  path: '/app',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const AboutRoute = AboutImport.update({
-  id: '/about',
-  path: '/about',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const IndexRoute = IndexImport.update({
+const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const DevicepageAmscontrolwebdebugRoute =
-  DevicepageAmscontrolwebdebugImport.update({
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppRoute = AppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Filament_managerRoute = Filament_managerRouteImport.update({
+  id: '/filament_manager',
+  path: '/filament_manager',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Device_pageAms_control_webRoute =
+  Device_pageAms_control_webRouteImport.update({
+    id: '/device_page/ams_control_web',
+    path: '/device_page/ams_control_web',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const Device_pageAms_control_web_debugRoute =
+  Device_pageAms_control_web_debugRouteImport.update({
     id: '/device_page/ams_control_web_debug',
     path: '/device_page/ams_control_web_debug',
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => rootRouteImport,
   } as any)
-
-const DevicepageAmscontrolwebRoute = DevicepageAmscontrolwebImport.update({
-  id: '/device_page/ams_control_web',
-  path: '/device_page/ams_control_web',
-  getParentRoute: () => rootRoute,
-} as any)
-
-// Populate the FileRoutesByPath interface
-
-declare module '@tanstack/react-router' {
-  interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexImport
-      parentRoute: typeof rootRoute
-    }
-    '/about': {
-      id: '/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AboutImport
-      parentRoute: typeof rootRoute
-    }
-    '/app': {
-      id: '/app'
-      path: '/app'
-      fullPath: '/app'
-      preLoaderRoute: typeof AppImport
-      parentRoute: typeof rootRoute
-    }
-    '/filament_manager': {
-      id: '/filament_manager'
-      path: '/filament_manager'
-      fullPath: '/filament_manager'
-      preLoaderRoute: typeof FilamentmanagerImport
-      parentRoute: typeof rootRoute
-    }
-    '/device_page/ams_control_web': {
-      id: '/device_page/ams_control_web'
-      path: '/device_page/ams_control_web'
-      fullPath: '/device_page/ams_control_web'
-      preLoaderRoute: typeof DevicepageAmscontrolwebImport
-      parentRoute: typeof rootRoute
-    }
-    '/device_page/ams_control_web_debug': {
-      id: '/device_page/ams_control_web_debug'
-      path: '/device_page/ams_control_web_debug'
-      fullPath: '/device_page/ams_control_web_debug'
-      preLoaderRoute: typeof DevicepageAmscontrolwebdebugImport
-      parentRoute: typeof rootRoute
-    }
-  }
-}
-
-// Create and export the route tree
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
-  '/filament_manager': typeof FilamentmanagerRoute
-  '/device_page/ams_control_web': typeof DevicepageAmscontrolwebRoute
-  '/device_page/ams_control_web_debug': typeof DevicepageAmscontrolwebdebugRoute
+  '/filament_manager': typeof Filament_managerRoute
+  '/device_page/ams_control_web': typeof Device_pageAms_control_webRoute
+  '/device_page/ams_control_web_debug': typeof Device_pageAms_control_web_debugRoute
 }
-
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
-  '/filament_manager': typeof FilamentmanagerRoute
-  '/device_page/ams_control_web': typeof DevicepageAmscontrolwebRoute
-  '/device_page/ams_control_web_debug': typeof DevicepageAmscontrolwebdebugRoute
+  '/filament_manager': typeof Filament_managerRoute
+  '/device_page/ams_control_web': typeof Device_pageAms_control_webRoute
+  '/device_page/ams_control_web_debug': typeof Device_pageAms_control_web_debugRoute
 }
-
 export interface FileRoutesById {
-  __root__: typeof rootRoute
+  __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
-  '/filament_manager': typeof FilamentmanagerRoute
-  '/device_page/ams_control_web': typeof DevicepageAmscontrolwebRoute
-  '/device_page/ams_control_web_debug': typeof DevicepageAmscontrolwebdebugRoute
+  '/filament_manager': typeof Filament_managerRoute
+  '/device_page/ams_control_web': typeof Device_pageAms_control_webRoute
+  '/device_page/ams_control_web_debug': typeof Device_pageAms_control_web_debugRoute
 }
-
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
@@ -163,61 +101,70 @@ export interface FileRouteTypes {
     | '/device_page/ams_control_web_debug'
   fileRoutesById: FileRoutesById
 }
-
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AppRoute: typeof AppRoute
-  FilamentmanagerRoute: typeof FilamentmanagerRoute
-  DevicepageAmscontrolwebRoute: typeof DevicepageAmscontrolwebRoute
-  DevicepageAmscontrolwebdebugRoute: typeof DevicepageAmscontrolwebdebugRoute
+  Filament_managerRoute: typeof Filament_managerRoute
+  Device_pageAms_control_webRoute: typeof Device_pageAms_control_webRoute
+  Device_pageAms_control_web_debugRoute: typeof Device_pageAms_control_web_debugRoute
+}
+
+declare module '@tanstack/react-router' {
+  interface FileRoutesByPath {
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/filament_manager': {
+      id: '/filament_manager'
+      path: '/filament_manager'
+      fullPath: '/filament_manager'
+      preLoaderRoute: typeof Filament_managerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device_page/ams_control_web': {
+      id: '/device_page/ams_control_web'
+      path: '/device_page/ams_control_web'
+      fullPath: '/device_page/ams_control_web'
+      preLoaderRoute: typeof Device_pageAms_control_webRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device_page/ams_control_web_debug': {
+      id: '/device_page/ams_control_web_debug'
+      path: '/device_page/ams_control_web_debug'
+      fullPath: '/device_page/ams_control_web_debug'
+      preLoaderRoute: typeof Device_pageAms_control_web_debugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+  }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AppRoute: AppRoute,
-  FilamentmanagerRoute: FilamentmanagerRoute,
-  DevicepageAmscontrolwebRoute: DevicepageAmscontrolwebRoute,
-  DevicepageAmscontrolwebdebugRoute: DevicepageAmscontrolwebdebugRoute,
+  Filament_managerRoute: Filament_managerRoute,
+  Device_pageAms_control_webRoute: Device_pageAms_control_webRoute,
+  Device_pageAms_control_web_debugRoute: Device_pageAms_control_web_debugRoute,
 }
-
-export const routeTree = rootRoute
+export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-/* ROUTE_MANIFEST_START
-{
-  "routes": {
-    "__root__": {
-      "filePath": "__root.tsx",
-      "children": [
-        "/",
-        "/about",
-        "/app",
-        "/filament_manager",
-        "/device_page/ams_control_web",
-        "/device_page/ams_control_web_debug"
-      ]
-    },
-    "/": {
-      "filePath": "index.tsx"
-    },
-    "/about": {
-      "filePath": "about.tsx"
-    },
-    "/app": {
-      "filePath": "app.tsx"
-    },
-    "/filament_manager": {
-      "filePath": "filament_manager.tsx"
-    },
-    "/device_page/ams_control_web": {
-      "filePath": "device_page/ams_control_web.tsx"
-    },
-    "/device_page/ams_control_web_debug": {
-      "filePath": "device_page/ams_control_web_debug.tsx"
-    }
-  }
-}
-ROUTE_MANIFEST_END */

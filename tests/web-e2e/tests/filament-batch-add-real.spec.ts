@@ -301,7 +301,9 @@ test.describe('STUDIO-18344 real AMS multi-select batch add dry-run @studio-1834
     // Pick the first two. Spec stays minimal: 2 is the smallest size that
     // exercises the "multi-select" code path; selecting more would just
     // increase the assertion surface without adding coverage.
-    const picked: AmsSlotSnapshot[] = [nonEmptySlots[0], nonEmptySlots[1]]
+    const [firstSlot, secondSlot] = nonEmptySlots
+    if (!firstSlot || !secondSlot) return
+    const picked: AmsSlotSnapshot[] = [firstSlot, secondSlot]
 
     // Click by raw testId rather than (unit, tray) — real AMS payloads
     // can carry non-numeric `ams_id` values (e.g. AMS Lite, AMS HT, or

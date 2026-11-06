@@ -1477,7 +1477,7 @@ export function AddEditDialog({
       // the printer eventually pushes back on its own.
     }
     window.setTimeout(() => setRefreshBusy(false), 2000);
-  }, [refreshBusy, amsData?.selected_dev_id, machines, onRequestPushall]);
+  }, [refreshBusy, amsData?.selected_dev_id, machines, onRequestPushall, t]);
 
   // F4.7: follow Studio-wide machine switches while the dialog is open on
   // the AMS tab. If the user picks a different printer elsewhere in
@@ -1639,7 +1639,7 @@ export function AddEditDialog({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [open, mode, amsLoading, amsData?.selected_dev_id, onFetchAmsData]);
+  }, [open, mode, amsLoading, amsData?.selected_dev_id, onFetchAmsData, t]);
 
   // Live-refresh the Printer dropdown while the AMS tab is open so
   // devices that come online / go offline / get (un)bound appear without

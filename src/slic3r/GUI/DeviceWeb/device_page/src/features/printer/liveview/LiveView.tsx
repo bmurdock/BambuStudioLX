@@ -107,7 +107,7 @@ export default function WSAvcCDialogDemo() {
     const logAreaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
     const wsRef = React.useRef<WebSocket | null>(null);
-    const decoderRef = React.useRef<VideoDecoder | null>(null as any);
+    const decoderRef = React.useRef<VideoDecoder | null>(null);
     const avccRef = React.useRef<Uint8Array | null>(null);
     const needConfigRef = React.useRef(true);
     const codecRef = React.useRef("avc1.42E01E");
@@ -132,7 +132,7 @@ export default function WSAvcCDialogDemo() {
     } | null>(null);
 
     // 日志追加（修复换行 + 自动滚动）
-    const log = React.useCallback((...a: any[]) => {
+    const log = React.useCallback((...a: unknown[]) => {
         const line = `[${new Date().toLocaleTimeString()}] ` + a.map(String).join(" ");
         setLogs((old) => (old ? old + "" : "") + line);
   }, []);
@@ -192,7 +192,7 @@ export default function WSAvcCDialogDemo() {
                 : "—";
             const lines = [
                 `状态: ${wsRef.current ? (wsRef.current.readyState === 1 ? "已连接" : "连接中") : "未连接"}`,
-                `Decoder: ${decoderRef.current ? (decoderRef.current as any).state ?? "—" : "—"}`,
+                `Decoder: ${decoderRef.current ? decoderRef.current.state ?? "—" : "—"}`,
                 `FPS: ${frameCountRef.current.toFixed(0)}`,
                 `码率: ${kbps.toFixed(0)} kbps`,
                 `延迟: ${avgLat == null ? "—" : avgLat.toFixed(1) + " ms"}`,
@@ -217,7 +217,6 @@ export default function WSAvcCDialogDemo() {
 // 解码器
 const ensureDecoder = React.useCallback(async () => {
     if (decoderRef.current) return;
-    // @ts-ignore - Safari 早期可能没有 VideoDecoder
     if (!("VideoDecoder" in window)) {
         log("ERR: 当前浏览器不支持 WebCodecs");
         setStatus("浏览器不支持 WebCodecs");
@@ -230,7 +229,6 @@ const ensureDecoder = React.useCallback(async () => {
         log("ERR: Canvas 2D not available");
         return;
     }
-    // @ts-ignore
     decoderRef.current = new VideoDecoder({
         output: (frame: VideoFrame) => {
             if (
@@ -241,13 +239,12 @@ const ensureDecoder = React.useCallback(async () => {
                 canvas.height = frame.codedHeight;
                 log("resize canvas", `${frame.codedWidth}x${frame.codedHeight}`);
             }
-            // @ts-ignore
             ctx.drawImage(frame, 0, 0);
             frame.close();
             frameCountRef.current++;
             inflightRef.current = Math.max(0, inflightRef.current - 1);
         },
-        error: (e: any) => {
+        error: (e: DOMException) => {
             decodeErrRef.current++;
             log("DECODER ERROR:", e);
         },
@@ -270,7 +267,7 @@ const configureDecoder = React.useCallback(async () => {
                 avccRef.current.byteOffset,
                 avccRef.current.byteOffset + avccRef.current.byteLength
             ),
-        } as any);
+        });
         needConfigRef.current = false;
         log(
             "decoder configured",
@@ -414,13 +411,11 @@ const onMessage = React.useCallback(
 
         try {
             inflightRef.current++;
-            // @ts-ignore
             const chunk = new EncodedVideoChunk({
                 type: isKey ? "key" : "delta",
                 timestamp: tsUs,
                 data: payload!,
             });
-            // @ts-ignore
             decoderRef.current!.decode(chunk);
             parsedFramesRef.current++;
         } catch (e) {
@@ -452,14 +447,14 @@ const handleStart = React.useCallback(async () => {
         setCanStop(false);
         log("ws close");
         try {
-            decoderRef.current && decoderRef.current.close();
-        } catch { }
-        decoderRef.current = null as any;
+            decoderRef.current?.close();
+        } catch { /* decoder may already be closed */ }
+        decoderRef.current = null;
         avccRef.current = null;
         needConfigRef.current = true;
     };
-    ws.onerror = (e: any) => {
-        log("ws error", e?.message || e);
+    ws.onerror = (e: Event) => {
+        log("ws error", e);
     };
     ws.onmessage = onMessage;
     wsRef.current = ws;
@@ -483,10 +478,10 @@ React.useEffect(() => {
     return () => {
         try {
             wsRef.current?.close();
-        } catch { }
+        } catch { /* socket may already be closed */ }
         try {
             decoderRef.current?.close();
-        } catch { }
+        } catch { /* decoder may already be closed */ }
     };
 }, []);
 

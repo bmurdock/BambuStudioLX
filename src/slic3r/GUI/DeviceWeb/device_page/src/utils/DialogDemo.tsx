@@ -4,20 +4,7 @@
 // Styling: TailwindCSS
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { create } from "zustand";
-
-/** ------------------------------------------------------------------
- * Zustand store
- * ------------------------------------------------------------------*/
-interface DialogState {
-  open: boolean;
-  setOpen: (next: boolean) => void;
-}
-
-export const useDialogStore = create<DialogState>((set) => ({
-  open: false,
-  setOpen: (next) => set({ open: next }),
-}));
+import { useDialogStore } from './dialogStore';
 
 /** ------------------------------------------------------------------
  * Button that only **opens** the dialog; cannot close it.

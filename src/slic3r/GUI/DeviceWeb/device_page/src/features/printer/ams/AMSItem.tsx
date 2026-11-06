@@ -73,7 +73,7 @@ export default function AMSItem() {
             window.removeEventListener("scroll", scheduleRecompute);
             ro.disconnect();
         };
-    }, []);
+    }, [scheduleRecompute]);
 
     return (
         <div ref={originRef} className="relative w-[16.375rem] h-[10.5rem]">

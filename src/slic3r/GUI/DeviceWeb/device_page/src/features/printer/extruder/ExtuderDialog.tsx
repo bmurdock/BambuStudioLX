@@ -140,7 +140,7 @@ export function DesignDialog({ open, onClose, portalContainer, title = 'Nozzle &
     <Dialog.Root open={open} onOpenChange={(n) => { if (!n) onClose() }} modal={false}>
       <Dialog.Portal container={portalContainer || undefined}>
         <Dialog.Content
-          ref={panelRef as any}
+          ref={panelRef}
           onEscapeKeyDown={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
           onPointerDownOutside={(e) => e.preventDefault()}

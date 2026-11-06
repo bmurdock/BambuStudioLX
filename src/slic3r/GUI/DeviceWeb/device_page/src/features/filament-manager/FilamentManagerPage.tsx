@@ -105,7 +105,7 @@ export function FilamentManagerPage() {
   // Internal build: enable debug panel immediately (independent of init() success)
   const setDebugEnabled = useStore((s) => s.filament.setDebugEnabled);
   useEffect(() => {
-    if ((window as any).__internalBuild) {
+    if ((window as Window & { __internalBuild?: boolean }).__internalBuild) {
       setDebugEnabled(true);
     }
   }, [setDebugEnabled]);
@@ -176,7 +176,7 @@ export function FilamentManagerPage() {
 
     // Filters
     for (const [k, v] of Object.entries(filters)) {
-      if (v) list = list.filter((s) => (s as any)[k] === v);
+      if (v && (k === 'brand' || k === 'series')) list = list.filter((s) => s[k] === v);
     }
 
     return list;
@@ -194,7 +194,7 @@ export function FilamentManagerPage() {
   // Filter dropdown options
   const getFilterOptions = (key: FilterKey): string[] => {
     const vals = new Set<string>();
-    spools.forEach((s) => { const v = (s as any)[key]; if (v) vals.add(v); });
+    spools.forEach((s) => { const v = s[key]; if (v) vals.add(v); });
     return [...vals].sort();
   };
 

@@ -185,8 +185,8 @@ export function SpoolTable({
         );
         return sortAsc ? typeCmp : -typeCmp;
       }
-      const va = (a as any)[sortKey];
-      const vb = (b as any)[sortKey];
+      const va = a[sortKey];
+      const vb = b[sortKey];
       if (typeof va === 'number' && typeof vb === 'number') return sortAsc ? va - vb : vb - va;
       const sa = String(va || ''), sb = String(vb || '');
       return sortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);

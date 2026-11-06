@@ -308,7 +308,7 @@ function XYZDialog({ open, onClose, onHome, onJog, title = 'Motion:XYZ', portalC
             'rounded-lg bg-white shadow-[0_0.375rem_1rem_rgba(0,0,0,0.12)] outline-none',
             'focus-visible:ring-2 focus-visible:ring-black/10'
           ].join(' ')}
-          ref={panelRef as any}
+          ref={panelRef}
           onKeyDown={onKeyDown}
         >
 

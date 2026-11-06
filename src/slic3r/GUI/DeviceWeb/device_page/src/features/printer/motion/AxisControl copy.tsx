@@ -39,7 +39,7 @@ function AxisDisc({ sizeRem = 13.75, onHome, onJog }: { sizeRem?: number; onHome
   // 环形扇形路径（r0=内半径, r1=外半径, a0->a1 角度）
   const ringSectorPath = (r0: number, r1: number, a0: number, a1: number) => {
     // 规范化：保证 a1 > a0
-    let _a0 = a0
+    const _a0 = a0
     let _a1 = a1
     if (_a1 <= _a0) _a1 += 360
     const p0 = P(_a0, r0)
@@ -244,7 +244,7 @@ function XYZDialog({ open, onClose, onHome, onJog, title = 'Motion:XYZ' }: { ope
             'focus-visible:ring-2 focus-visible:ring-black/10',
             'relative',
           ].join(' ')}
-          ref={panelRef as any}
+          ref={panelRef}
           onKeyDown={onKeyDown}
         >
           <DialogHeader title={title} onClose={onClose} />

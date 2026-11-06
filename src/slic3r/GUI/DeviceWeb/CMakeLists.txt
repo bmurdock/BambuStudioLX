@@ -7,8 +7,8 @@
 
 function(prepare_node_env)
     # 定义版本号
-    set(NODE_VERSION "22.22.2")
-    set(PNPM_VERSION "10.12.1")
+    set(NODE_VERSION "22.23.4")
+    set(PNPM_VERSION "10.34.9")
 
     # 定义本地缓存目录（放在项目同级目录，clean build 后不会丢失）
     set(NODE_CACHE_DIR "${CMAKE_SOURCE_DIR}/../node-cache")
@@ -19,27 +19,27 @@ function(prepare_node_env)
         set(NODE_ARCHIVE_NAME "node-v${NODE_VERSION}-win-x64.zip")
         set(NODE_BIN_DIR "node-v${NODE_VERSION}-win-x64")
         set(NODE_EXEC "node.exe")
-        set(NODE_HASH "7c93e9d92bf68c07182b471aa187e35ee6cd08ef0f24ab060dfff605fcc1c57c")
+        set(NODE_HASH "cbc74b5e0982c9dbb41525fd8fb5dcd32fbee237863f7829072f4639a1ce5f20")
         set(PNPM_URL "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-win-x64.exe")
         set(PNPM_EXEC_NAME "pnpm.exe")
-        set(PNPM_HASH "9b802759436b3bccfe0a78cb0b86e937ac44902ec16597260f59d5394602f092")
+        set(PNPM_HASH "e0af8d34dd5319f7e9a6c9838779e7e85caf9cfdedf99a7a4106aa1fdcf16d5c")
     elseif(APPLE)
         if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
             set(NODE_URL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-arm64.tar.gz")
             set(NODE_ARCHIVE_NAME "node-v${NODE_VERSION}-darwin-arm64.tar.gz")
             set(NODE_BIN_DIR "node-v${NODE_VERSION}-darwin-arm64/bin")
-            set(NODE_HASH "db4b275b83736df67533529a18cc55de2549a8329ace6c7bcc68f8d22d3c9000")
+            set(NODE_HASH "c9e1dbc748b33ed2d14f42445191ecaf14c56259c7a9a26d0042c49ec2b66428")
 
             set(PNPM_URL "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-macos-arm64")
-            set(PNPM_HASH "8b39b2129a19eeec9511eb7cdde2450b604e389551d59ad738167f7495b56d52")
+            set(PNPM_HASH "984b2f4316de371dc314243649e5f9ea392195d541dedbfdb990dc24d6c6e1a2")
         else()
             set(NODE_URL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-x64.tar.gz")
             set(NODE_ARCHIVE_NAME "node-v${NODE_VERSION}-darwin-x64.tar.gz")
             set(NODE_BIN_DIR "node-v${NODE_VERSION}-darwin-x64/bin")
-            set(NODE_HASH "12a6abb9c2902cf48a21120da13f87fde1ed1b71a13330712949e8db818708ba")
+            set(NODE_HASH "efcc2b0db6f94bf53eddb038fe2b370277a042bd29e4f19b8f8e23598795b819")
 
             set(PNPM_URL "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-macos-x64")
-            set(PNPM_HASH "4c78e34022bfecfae60c041148a8022858b80b50e3b31c8fa8ba7b2b6259dd4a")
+            set(PNPM_HASH "58b35a997d2d5167ef60e24b6ac0d71b76a5e1a4b3346cb1075b1dface50bd32")
         endif()
         set(NODE_EXEC "node")
         set(PNPM_EXEC_NAME "pnpm")
@@ -49,21 +49,21 @@ function(prepare_node_env)
             set(NODE_ARCHIVE_NAME "node-v${NODE_VERSION}-linux-arm64.tar.xz")
             set(NODE_BIN_DIR "node-v${NODE_VERSION}-linux-arm64/bin")
             set(NODE_EXEC "node")
-            set(NODE_HASH "e9e1930fd321a470e29bb68f30318bf58e3ecb4acb4f1533fb19c58328a091fe")
+            set(NODE_HASH "6287aa46b6c375d816e63ae66d024fbbfd70404825aabdfdf898a970871d2f4b")
 
             set(PNPM_URL "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-arm64")
             set(PNPM_EXEC_NAME "pnpm")
-            set(PNPM_HASH "c2f9e9d42d81f9f40a0f895513d014a08d5ecb0abc9e15c426ecfde6f492706b")
+            set(PNPM_HASH "85abd31b96964e6510cecb3b366ba024287191e0ee5978e5a9e2d3beb4a377d1")
         else()
             set(NODE_URL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz")
             set(NODE_ARCHIVE_NAME "node-v${NODE_VERSION}-linux-x64.tar.xz")
             set(NODE_BIN_DIR "node-v${NODE_VERSION}-linux-x64/bin")
             set(NODE_EXEC "node")
-            set(NODE_HASH "88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a")
+            set(NODE_HASH "1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce")
 
             set(PNPM_URL "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-x64")
             set(PNPM_EXEC_NAME "pnpm")
-            set(PNPM_HASH "eb2dc1f109bca046ce734d062c8dd8f34db2b58a115992f9b086456efd7b2305")
+            set(PNPM_HASH "3ec79240658f0ee4e8977f21ee2c598c7a8b8d06b86dc564f2ec6cb099fd8ac2")
         endif()
     endif()
 
@@ -86,7 +86,7 @@ function(prepare_node_env)
             SHOW_PROGRESS
             STATUS node_dl_status
             EXPECTED_HASH SHA256=${NODE_HASH}
-            TLS_VERIFY OFF
+            TLS_VERIFY ON
         )
         list(GET node_dl_status 0 node_dl_code)
         list(GET node_dl_status 1 node_dl_msg)
@@ -141,7 +141,7 @@ function(prepare_node_env)
             SHOW_PROGRESS
             STATUS pnpm_dl_status
             EXPECTED_HASH SHA256=${PNPM_HASH}
-            TLS_VERIFY OFF
+            TLS_VERIFY ON
         )
         list(GET pnpm_dl_status 0 pnpm_dl_code)
         list(GET pnpm_dl_status 1 pnpm_dl_msg)
@@ -224,7 +224,7 @@ set(DEVICE_PAGE_BUILD_INPUTS
 add_custom_command(
     OUTPUT "${DEVICE_PAGE_BUILD_STAMP}"
     COMMAND echo "Running PNPM install"
-    COMMAND ${CMAKE_COMMAND} -E env "PATH=${DEVICE_PAGE_PATH}" ${PNPM_EXECUTABLE} install --store-dir ${PNPM_STORE_DIR}
+    COMMAND ${CMAKE_COMMAND} -E env "PATH=${DEVICE_PAGE_PATH}" "CI=true" ${PNPM_EXECUTABLE} install --frozen-lockfile --store-dir ${PNPM_STORE_DIR}
     COMMAND echo "Running PNPM run build"
     COMMAND ${CMAKE_COMMAND} -E env "PATH=${DEVICE_PAGE_PATH}" ${PNPM_EXECUTABLE} run build
     COMMAND echo "Removing page target directory"

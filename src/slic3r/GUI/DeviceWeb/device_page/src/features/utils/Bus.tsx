@@ -25,7 +25,7 @@ const ConnectorExample = () => {
       return null;
     });
     setBarPoints(points.filter(isPoint));
-  }, [colors.length]);
+  }, []);
 
   // 底部横条参数
   const barBottom = 120;

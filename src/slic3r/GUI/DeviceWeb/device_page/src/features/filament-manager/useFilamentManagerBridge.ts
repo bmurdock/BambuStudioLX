@@ -144,6 +144,7 @@ export function useFilamentManagerBridge() {
   }, [t, pushToast]);
 
   useEffect(() => {
+        const agg = pushDoneAggRef.current;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (!detail?.body) return;
@@ -328,10 +329,9 @@ export function useFilamentManagerBridge() {
       document.removeEventListener('cpp:device', handler);
       // STUDIO-17956: drop any pending batch-push timer so an unmount
       // mid-batch doesn't fire a toast from a stale closure.
-      const agg = pushDoneAggRef.current;
       if (agg.timer) { clearTimeout(agg.timer); agg.timer = null; }
     };
-  }, [setSpools, setPresets, setCloudSync, setCloudConfig, pushToast, appendCloudSyncHistory, appendDebugLog, setMachines, setAmsData, setSelectedMachineDevId, setCloudAutoPushSummary, t, flushPushDoneAgg]);
+  }, [setSpools, setPresets, setCloudSync, setCloudConfig, pushToast, appendCloudSyncHistory, appendDebugLog, setMachines, setAmsData, setSelectedMachineDevId, setCloudAutoPushSummary, t, flushPushDoneAgg, setCustomFilamentCreateResult]);
 
   // STUDIO-17977: candidate prefetch — runs whenever the spool list changes.
   // Drives the list row tail (colorName + BBL fila code) without waiting on

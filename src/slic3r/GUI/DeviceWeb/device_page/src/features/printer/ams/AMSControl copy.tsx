@@ -58,7 +58,7 @@ function NozzleExtruderDialog({ open, onClose, title = 'Nozzle & Extruder', port
             'focus-visible:ring-2 focus-visible:ring-black/10',
             'relative flex flex-col',
           ].join(' ')}
-          ref={panelRef as any}
+          ref={panelRef}
         >
           <DialogHeader title={title} onClose={onClose} />
           <div className="w-full h-px bg-[#EBEBEB]"></div>
