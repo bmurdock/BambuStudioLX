@@ -562,7 +562,7 @@ if (NOT WIN32)
     #find_package(Libssh2 REQUIRED)
     #target_link_libraries(libcurl INTERFACE Libssh2::libssh2)
 else()
-    target_link_libraries(libcurl INTERFACE crypt32)
+    target_link_libraries(libcurl INTERFACE crypt32 iphlpapi)
 endif()
 
 if (SLIC3R_STATIC AND NOT SLIC3R_STATIC_EXCLUDE_CURL)
