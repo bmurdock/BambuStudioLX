@@ -88,8 +88,7 @@ jobs:
         shell: pwsh
 
       # Windows on ARM64/ARM64EC. The windows-11-arm runner ships Visual
-      # Studio 2022 (v17), not 2026, so the generator differs from the x64 job
-      # above. All per-dep arch handling lives in deps/*.cmake and is selected
+      # Studio 2026, as does the x64 runner. Per-dep arch handling is selected
       # automatically from the -A platform (arm64ec = native ARM64 code with
       # the x64-compatible ABI, which is what lets the app load the x64-only
       # Bambu network plugin in-process).
@@ -103,7 +102,7 @@ jobs:
             mkdir ${{ github.workspace }}\deps\build\BambuStudio_dep
             cd "${{ github.workspace }}\deps\build"
             $platform = "${{ inputs.arch }}" -eq "arm64ec" ? "ARM64EC" : "ARM64"
-            cmake ../ -G "Visual Studio 17 2022" -A $platform -DDESTDIR="./BambuStudio_dep" -DCMAKE_BUILD_TYPE=Release -DDEP_DEBUG=OFF
+            cmake ../ -G "Visual Studio 18 2026" -A $platform -DDESTDIR="./BambuStudio_dep" -DCMAKE_BUILD_TYPE=Release -DDEP_DEBUG=OFF
             msbuild /m ALL_BUILD.vcxproj
         shell: pwsh
 
@@ -125,18 +124,26 @@ jobs:
         if: inputs.os == 'macos-15'
         run: |
           df -h
-          sudo find /Applications -maxdepth 1 -type d -name "Xcode_*.app" ! -name "Xcode_15.4.app" -exec rm -rf {} +
+          active_xcode="$(cd "${DEVELOPER_DIR:-$(xcode-select -p)}" && pwd -P)"
+          while [[ "$active_xcode" != / && "$active_xcode" != *.app ]]; do
+            active_xcode="$(dirname "$active_xcode")"
+          done
+          if [[ "$active_xcode" == *.app ]]; then
+            sudo find /Applications -maxdepth 1 -type d -name "Xcode_*.app" ! -path "$active_xcode" -exec rm -rf {} +
+          fi
           sudo rm -rf ~/Library/Developer/CoreSimulator/Caches/*
           df -h
 
+      # Keep zstd installed: Homebrew's curl downloader links to libzstd.
+      # The bundled curl already disables zstd in deps/CURL/CURL.cmake.
       - name: Build on Mac ${{ inputs.arch }}
         if: inputs.os == 'macos-15-intel'
         working-directory: ${{ github.workspace }}
         run: |
             brew install automake texinfo nasm yasm x264
-            brew uninstall --ignore-dependencies zstd
             brew unlink cmake || true
             brew tap-new $USER/old-cmake
+            brew tap --force homebrew/core
             brew extract --version=3.31.0 cmake $USER/old-cmake
             brew install $USER/old-cmake/cmake@3.31.0
             brew link --overwrite cmake@3.31.0
@@ -146,16 +153,15 @@ jobs:
                 (cd "${{ github.workspace }}/deps/build/${arch}" && \
                 find . -mindepth 1 -maxdepth 1 ! -name 'BambuStudio_deps' -exec rm -rf {} +)
             done
-            brew install zstd
       
       - name: Build on Mac ${{ inputs.arch }}
         if: inputs.os == 'macos-15' || inputs.os == 'macos-26'
         working-directory: ${{ github.workspace }}
         run: |
             brew install automake texinfo nasm yasm x264
-            brew uninstall --ignore-dependencies zstd
             brew unlink cmake || true
             brew tap-new $USER/old-cmake
+            brew tap --force homebrew/core
             brew extract --version=3.31.0 cmake $USER/old-cmake
             brew install $USER/old-cmake/cmake@3.31.0
             brew link --overwrite cmake@3.31.0
@@ -165,7 +171,6 @@ jobs:
                 (cd "${{ github.workspace }}/deps/build/${arch}" && \
                 find . -mindepth 1 -maxdepth 1 ! -name 'BambuStudio_deps' -exec rm -rf {} +)
             done
-            brew install zstd
 
       - name: pack deps on Macos
         if: inputs.os == 'macos-15-intel' || inputs.os == 'macos-15' || inputs.os == 'macos-26'

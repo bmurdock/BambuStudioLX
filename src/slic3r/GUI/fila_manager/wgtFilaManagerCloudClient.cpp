@@ -5,6 +5,8 @@
 
 #include <boost/log/trivial.hpp>
 
+#include <thread>
+#include "libslic3r/Log.hpp"
 
 namespace Slic3r { namespace GUI {
 
@@ -18,6 +20,16 @@ void emit_http_debug(const std::string& level,
     wxGetApp().emit_fila_debug_log("http", level, title, summary, detail);
 }
 
+nlohmann::json parse_json_response(const std::string& resp_body)
+{
+    try {
+        return nlohmann::json::parse(resp_body);
+    } catch (const std::exception&) {
+        BOOST_LOG_TRIVIAL(warning) << current_exception_message();
+        return nlohmann::json{{"raw", resp_body}};
+    }
+}
+
 int parse_int(const std::map<std::string, std::string>& query, const std::string& key, int default_value)
 {
     auto it = query.find(key);
@@ -27,6 +39,7 @@ int parse_int(const std::map<std::string, std::string>& query, const std::string
     try {
         return std::stoi(it->second);
     } catch (const std::exception&) {
+        BOOST_LOG_TRIVIAL(warning) << current_exception_message();
         return default_value;
     }
 }
@@ -140,6 +153,7 @@ void wgtFilaManagerCloudClient::update_spool(
     try {
         request_body["id"] = std::stoll(id);
     } catch (const std::exception&) {
+        BOOST_LOG_TRIVIAL(warning) << current_exception_message();
         // spool_id 不可解析为 int64 时保持字符串形式交给 server，让服务端回
         // 具体的 400 校验错误（而不是本地吞掉），便于排查。
         request_body["id"] = id;
