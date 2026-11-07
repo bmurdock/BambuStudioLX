@@ -1,6 +1,6 @@
 {
   "base_version": "2.9.0",
-  "source_tree_sha256": "ac75cfd0713e078a15bc59c7dc805be7536937ea95749b20e67e96473537a1a4",
+  "source_tree_sha256": "e75a5243f116bd8881030561951c9ff31d2fc69b4d1d728f4f741266a7cdde91",
   "patches": [
     {
       "vulnerability": "CVE-2026-113351",
@@ -17,11 +17,28 @@
       "upstream_diff_sha256": "f66dc30b84f0fcffa64c57dc9671befe289cc7c07b8f6a1d80d229a16a96768b",
       "local_patch": "deps/EXPAT/patches/CVE-2026-115506.patch",
       "local_patch_sha256": "7eb100ac9b64e9716f026fee91a467d5021c1ec0de4da58b0e62dcfc0a288bf5"
+    },
+    {
+      "vulnerability": "CVE-2026-117610",
+      "upstream_pr": "https://github.com/libexpat/libexpat/pull/1444",
+      "merge_commit": "2480a0520fee623a8f7c3f038ff9fb491105472c",
+      "upstream_diff_sha256": "8507b4b320e59ed3e9800e44c725acd369ffecaeb93e25b059673aaeab274361",
+      "local_patch": "deps/EXPAT/patches/CVE-2026-117610.patch",
+      "local_patch_sha256": "9d00319172d18ca44e918ed494751ea3878417d0abcf91e0c3fd4b39abdd8935"
+    },
+    {
+      "vulnerability": "CVE-2026-118370",
+      "upstream_pr": "https://github.com/libexpat/libexpat/pull/1450",
+      "merge_commit": "c8c6d89617e7408235b160d14707de4ca9e40be7",
+      "upstream_diff_sha256": "531c3523111aefd2cffd875e842f97f045f5f17347f35c42e23b6cc3967673dd",
+      "local_patch": "deps/EXPAT/patches/CVE-2026-118370.patch",
+      "local_patch_sha256": "734107ca2082cdf43e89c02833344c6643e1c43cdc943922d8c9ab93c26d5a3f"
     }
   ],
   "adaptations": [
     "Preserve 2.9.0 signed-integer-overflow guards and int textLen casts.",
     "Use the equivalent null-checked pointer subtraction because EXPAT_SAFE_PTR_DIFF is absent in 2.9.0.",
-    "Retain the int debug format for textLen; adjust patch context for the other backport."
+    "Retain the int debug format for textLen; adjust patch context for the other backport.",
+    "Apply the upstream #1444 and #1450 xmlparse.c fixes without source changes."
   ]
 }

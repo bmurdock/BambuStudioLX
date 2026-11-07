@@ -18,14 +18,15 @@ set(_curl_platform_flags
   #-DHTTP_ONLY=ON
 
   -DCMAKE_USE_GSSAPI:BOOL=OFF
-  -DCMAKE_USE_LIBSSH2:BOOL=OFF
+  -DCURL_USE_LIBSSH2:BOOL=OFF
   -DUSE_RTMP:BOOL=OFF
   -DUSE_NGHTTP2:BOOL=OFF
   -DUSE_MBEDTLS:BOOL=OFF
   -DCURL_USE_LIBPSL:BOOL=OFF
-  # Keep the dependency closure explicit; these codecs are not bundled here.
+  # Keep the dependency closure explicit; these optional libraries are not bundled.
   -DCURL_BROTLI:BOOL=OFF
   -DCURL_ZSTD:BOOL=OFF
+  -DUSE_LIBIDN2:BOOL=OFF
 )
 
 if (WIN32)

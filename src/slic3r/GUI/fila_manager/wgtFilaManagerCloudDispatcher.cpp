@@ -10,12 +10,13 @@
 #include "slic3r/Utils/NetworkAgent.hpp"
 
 #include <wx/app.h>
-#include <boost/log/trivial.hpp>
 
 #include <ctime>
 #include <iomanip>
 #include <sstream>
 #include <memory>
+#include <thread>
+#include "libslic3r/Log.hpp"
 
 namespace Slic3r { namespace GUI {
 

@@ -17,9 +17,9 @@
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/beast/core/error.hpp>
-#include <boost/log/trivial.hpp>
 
 #include "libslic3r/Utils.hpp"
+#include "libslic3r/Log.hpp"
 
 namespace Slic3r { namespace GUI {
 

@@ -1,12 +1,15 @@
+set(CGAL_PATCH_COMMAND git apply)
 if (IN_GIT_REPO)
     set(CGAL_DIRECTORY_FLAG --directory ${BINARY_DIR_REL}/dep_CGAL-prefix/src/dep_CGAL)
+    # --directory is relative to the repository root, not the extracted source.
+    set(CGAL_PATCH_COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR}/.. git apply)
 endif ()
 
 bambustudio_add_cmake_project(
     CGAL
     URL      https://github.com/CGAL/cgal/archive/refs/tags/v5.4.zip
     URL_HASH SHA256=d7605e0a5a5ca17da7547592f6f6e4a59430a0bc861948974254d0de43eab4c0
-    PATCH_COMMAND git apply ${CGAL_DIRECTORY_FLAG} --verbose --ignore-space-change --whitespace=fix ${CMAKE_CURRENT_LIST_DIR}/0001-clang19.patch
+    PATCH_COMMAND ${CGAL_PATCH_COMMAND} ${CGAL_DIRECTORY_FLAG} --verbose --ignore-space-change --whitespace=fix ${CMAKE_CURRENT_LIST_DIR}/0001-clang19.patch
     DEPENDS ${BOOST_PKG} ${GMP_PKG} ${MPFR_PKG}
     CMAKE_ARGS
         -DCMAKE_POLICY_VERSION_MINIMUM=3.5

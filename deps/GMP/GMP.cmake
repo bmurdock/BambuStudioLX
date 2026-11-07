@@ -1,9 +1,12 @@
 
 set(_srcdir ${CMAKE_CURRENT_LIST_DIR}/gmp)
 set(_dstdir ${DESTDIR}/usr/local)
+set(GMP_PATCH_COMMAND git apply)
 
 if (IN_GIT_REPO)
     set(GMP_DIRECTORY_FLAG --directory ${BINARY_DIR_REL}/dep_GMP-prefix/src/dep_GMP)
+    # --directory is relative to the repository root, not the extracted source.
+    set(GMP_PATCH_COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR}/.. git apply)
 endif ()
 
 if (MSVC)
@@ -90,8 +93,8 @@ else ()
         #       causes intermittent crashes (e.g. __gmpz_gcd / __gmpn_* + __stack_chk_fail)
         #       in CGAL exact arithmetic. Harmless on non-arm64 targets (files unused)
         #       and correct on Linux aarch64 too, so it is applied unconditionally here.
-        PATCH_COMMAND git apply ${GMP_DIRECTORY_FLAG} --verbose ${CMAKE_CURRENT_LIST_DIR}/0001-GMP_GCC15.patch
-        COMMAND git apply ${GMP_DIRECTORY_FLAG} --verbose ${CMAKE_CURRENT_LIST_DIR}/0002-GMP_arm64_avoid_x18_reserved_on_darwin.patch
+        PATCH_COMMAND ${GMP_PATCH_COMMAND} ${GMP_DIRECTORY_FLAG} --verbose ${CMAKE_CURRENT_LIST_DIR}/0001-GMP_GCC15.patch
+        COMMAND ${GMP_PATCH_COMMAND} ${GMP_DIRECTORY_FLAG} --verbose ${CMAKE_CURRENT_LIST_DIR}/0002-GMP_arm64_avoid_x18_reserved_on_darwin.patch
         BUILD_IN_SOURCE ON
         CONFIGURE_COMMAND  env "CFLAGS=${_gmp_ccflags}" "CXXFLAGS=${_gmp_ccflags}" ./configure ${_cross_compile_arg} --enable-shared=no --enable-cxx=yes --enable-static=yes "--prefix=${DESTDIR}/usr/local" ${_gmp_build_tgt}
         BUILD_COMMAND     make -j

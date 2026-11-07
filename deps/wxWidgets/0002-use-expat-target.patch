@@ -1,0 +1,10 @@
+diff --git a/build/cmake/lib/expat.cmake b/build/cmake/lib/expat.cmake
+--- a/build/cmake/lib/expat.cmake
++++ b/build/cmake/lib/expat.cmake
+@@ -18,5 +18,6 @@
+     set(EXPAT_LIBRARIES wxexpat)
+     set(EXPAT_INCLUDE_DIRS ${wxSOURCE_DIR}/src/expat/expat/lib)
+ elseif(wxUSE_EXPAT)
+     find_package(EXPAT REQUIRED)
++    set(EXPAT_LIBRARIES EXPAT::EXPAT)
+ endif()
